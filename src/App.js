@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import Login from './Login';
+import FileUpload from './FileUpload';
+import Wardrobe from './Wardrobe';
+import { auth, logoutUser } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { getUserImages, getSharedGarments } from './storageService';
 
 function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentView, setCurrentView] = useState('main'); // 'main' or 'wardrobe'
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedModel, setSelectedModel] = useState('large');
   const [processing, setProcessing] = useState(false);
@@ -17,15 +25,151 @@ function App() {
   const [tryonTime, setTryonTime] = useState(0);
   const [availableMasks, setAvailableMasks] = useState([]);
   const [hasSavedMasks, setHasSavedMasks] = useState(false);
+  const [personImages, setPersonImages] = useState([]);
+  const [userImages, setUserImages] = useState([]);
+  const [showUpload, setShowUpload] = useState(false);
+  const [sam2Preview, setSam2Preview] = useState(null);
+  const [sam2Time, setSam2Time] = useState(0);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [showRawSAM2, setShowRawSAM2] = useState(false);
+  const [showMaskEditor, setShowMaskEditor] = useState(false);
+  const [editableMasks, setEditableMasks] = useState([]);
+  const [selectedMaskIndices, setSelectedMaskIndices] = useState({ shirt: [], pants: [], shoes: [] });
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const statusIntervalRef = useRef(null);
 
-  // Available images
-  const personImages = [
-    'person.png',
-    'person2.png'
-  ];
+  // Handle user login
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      setCurrentUser(null);
+      // Reset app state
+      setSelectedImage(null);
+      setResults(null);
+      setTryonResult(null);
+      setUserImages([]);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+  
+  // Handle file upload success
+  const handleUploadSuccess = async (uploadedFile) => {
+    // Refresh user images
+    const result = await getUserImages(currentUser.uid);
+    if (result.success) {
+      setUserImages(result.images);
+      // Select the newly uploaded image
+      setSelectedImage(uploadedFile.url);
+      setShowUpload(false);
+    }
+  };
+
+  // Listen to Firebase auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // User is signed in
+        setCurrentUser({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email.split('@')[0],
+          username: user.displayName || user.email.split('@')[0]
+        });
+      } else {
+        // User is signed out
+        setCurrentUser(null);
+      }
+    });
+
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
+  // Fetch available images
+  useEffect(() => {
+    if (!currentUser) return; // Skip if not logged in
+    
+    // Fetch user's Firebase Storage images
+    const fetchUserImages = async () => {
+      const result = await getUserImages(currentUser.uid);
+      if (result.success) {
+        setUserImages(result.images);
+      }
+    };
+    
+    // Fetch shared garments from Firebase Storage
+    const fetchGarments = async () => {
+      const result = await getSharedGarments();
+      if (result.success) {
+        setGarments(result.garments);
+        if (result.garments.length > 0) {
+          setSelectedGarment(result.garments[0].name);
+        }
+      }
+    };
+    
+    fetchUserImages();
+    fetchGarments();
+    
+    // Still fetch local demo images as fallback
+    fetch('/people')
+      .then(res => res.json())
+      .then(data => {
+        if (data.people) {
+          setPersonImages(data.people);
+        }
+      })
+      .catch(err => console.error('Failed to fetch demo people:', err));
+  }, [currentUser]); // Re-run when user logs in
+
+  // Check for available masks when image changes
+  useEffect(() => {
+    if (!currentUser) return; // Skip if not logged in
+    
+    checkAvailableMasks();
+    
+    // Check if saved masks exist in new or old location
+    if (selectedImage) {
+      fetch(`/quick-load-masks/${selectedImage}`)
+        .then(res => res.json())
+        .then(data => {
+          setHasSavedMasks(data.has_masks || false);
+        })
+        .catch(err => console.error('Error checking masks:', err));
+    }
+  }, [selectedImage, currentUser]);
+
+  // If not logged in, show login page
+  if (!currentUser) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  // Show wardrobe view if selected
+  if (currentView === 'wardrobe') {
+    return (
+      <Wardrobe 
+        user={currentUser} 
+        onBack={() => setCurrentView('main')} 
+      />
+    );
+  }
 
   // Start timer
   const startTimer = () => {
@@ -69,25 +213,24 @@ function App() {
     setStatus('Loading models...');
     startTimer();
 
-    // Update status periodically
-    let statusSteps = 0;
-    statusIntervalRef.current = setInterval(() => {
-      if (statusSteps === 0) setStatus('Loading models...');
-      else if (statusSteps === 1) setStatus('Running SAM2 segmentation...');
-      else if (statusSteps === 2) setStatus('Classifying with SigLIP...');
-      statusSteps++;
-    }, 5000);
-
     try {
+      // Determine if we're using a user image or demo image
+      const isUserImage = selectedImage && selectedImage.startsWith('http');
+      
+      const requestBody = isUserImage ? {
+        image_url: selectedImage,
+        model_size: selectedModel
+      } : {
+        image_path: `data/sample_images/people/${selectedImage}`,
+        model_size: selectedModel
+      };
+      
       const response = await fetch('/process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          image_path: `data/sample_images/people/${selectedImage}`,
-          model_size: selectedModel
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -113,56 +256,6 @@ function App() {
       setProcessing(false);
     }
   };
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, []);
-
-  // Fetch available garments and mask images
-  useEffect(() => {
-    // Fetch garments
-    fetch('/garments')
-      .then(res => res.json())
-      .then(data => {
-        if (data.garments) {
-          setGarments(data.garments);
-          if (data.garments.length > 0) {
-            setSelectedGarment(data.garments[0]);
-          }
-        }
-      })
-      .catch(err => console.error('Failed to fetch garments:', err));
-      
-    // Fetch available mask images
-    fetch('/list-mask-images')
-      .then(res => res.json())
-      .then(data => {
-        if (data.mask_images) {
-          console.log('Available mask images:', data.mask_images);
-        }
-      })
-      .catch(err => console.error('Failed to fetch mask images:', err));
-  }, []);
-
-  // Check for available masks when image changes
-  useEffect(() => {
-    checkAvailableMasks();
-    
-    // Check if saved masks exist
-    if (selectedImage) {
-      fetch(`/quick-load-masks/${selectedImage}`)
-        .then(res => res.json())
-        .then(data => {
-          setHasSavedMasks(data.has_masks || false);
-        })
-        .catch(err => console.error('Error checking masks:', err));
-    }
-  }, [selectedImage]);
 
   // Gemini Virtual Try-on
   const performGeminiTryon = async () => {
@@ -254,8 +347,49 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🎯 SAM2 Clothing Detection</h1>
-        <p>Select a person image to detect and segment clothing items</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1><img src="/images/logo.png" alt="KapdaAI" style={{ height: '40px', marginRight: '10px', verticalAlign: 'middle' }} />SAM2 Clothing Detection</h1>
+            <p>Select a person image to detect and segment clothing items</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <span style={{ color: '#ecf0f1', fontSize: '16px' }}>
+              👤 {currentUser.username}
+            </span>
+            <button
+              onClick={() => setCurrentView('wardrobe')}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#27ae60',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                marginRight: '10px'
+              }}
+            >
+              👗 My Wardrobe
+            </button>
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#e74c3c',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                transition: 'background-color 0.3s'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#c0392b'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#e74c3c'}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
       </header>
 
       <div className="container">
@@ -295,12 +429,39 @@ function App() {
                 value={selectedImage || ''} 
                 onChange={(e) => setSelectedImage(e.target.value)}
                 disabled={processing}
+                style={{ marginBottom: '10px' }}
               >
                 <option value="">Choose an image...</option>
-                {personImages.map(img => (
-                  <option key={img} value={img}>{img}</option>
-                ))}
+                {userImages.length > 0 && (
+                  <optgroup label="Your Images">
+                    {userImages.map(img => (
+                      <option key={img.path} value={img.url}>{img.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {personImages.length > 0 && (
+                  <optgroup label="Demo Images">
+                    {personImages.map(img => (
+                      <option key={img} value={img}>{img}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
+              <button
+                onClick={() => setShowUpload(!showUpload)}
+                style={{
+                  padding: '6px 12px',
+                  marginLeft: '10px',
+                  backgroundColor: '#27ae60',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                📤 Upload New
+              </button>
             </div>
             
             <div className="model-selector">
@@ -334,6 +495,47 @@ function App() {
               {processing ? 'Processing...' : '🚀 Generate Masks'}
             </button>
             
+            {results && (
+              <button 
+                className="debug-btn"
+                onClick={async () => {
+                  const res = await fetch('/get-debug-info');
+                  const data = await res.json();
+                  setDebugInfo(data.debug_data);
+                  setShowDebug(true);
+                }}
+                style={{
+                  marginLeft: '10px',
+                  padding: '8px 20px',
+                  backgroundColor: '#e74c3c',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Show SigLIP Debug
+              </button>
+            )}
+            
+            {results && results.raw_sam2_img && (
+              <button
+                onClick={() => {
+                  setShowRawSAM2(!showRawSAM2);
+                }}
+                style={{
+                  marginLeft: '10px',
+                  padding: '8px 20px',
+                  backgroundColor: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                🎯 Show All SAM2 Segments ({results.raw_masks_count})
+              </button>
+            )}
 
           </div>
 
@@ -407,6 +609,27 @@ function App() {
                           </div>
                           <div className="image-info">
                             <p>Shirts detected: {results.shirt_count}</p>
+                            <button
+                              onClick={async () => {
+                                const res = await fetch('/get-all-masks-with-classes');
+                                const data = await res.json();
+                                setEditableMasks(data.masks || []);
+                                setSelectedMaskIndices({ shirt: [], pants: [], shoes: [] });
+                                setShowMaskEditor(true);
+                              }}
+                              style={{
+                                marginTop: '10px',
+                                padding: '6px 15px',
+                                backgroundColor: '#e74c3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px'
+                              }}
+                            >
+                              🔄 Redo Selection
+                            </button>
                           </div>
                         </>
                       )}
@@ -418,6 +641,27 @@ function App() {
                           </div>
                           <div className="image-info">
                             <p>Pants detected: {results.pants_count}</p>
+                            <button
+                              onClick={async () => {
+                                const res = await fetch('/get-all-masks-with-classes');
+                                const data = await res.json();
+                                setEditableMasks(data.masks || []);
+                                setSelectedMaskIndices({ shirt: [], pants: [], shoes: [] });
+                                setShowMaskEditor(true);
+                              }}
+                              style={{
+                                marginTop: '10px',
+                                padding: '6px 15px',
+                                backgroundColor: '#e74c3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px'
+                              }}
+                            >
+                              🔄 Redo Selection
+                            </button>
                           </div>
                         </>
                       )}
@@ -429,6 +673,27 @@ function App() {
                           </div>
                           <div className="image-info">
                             <p>Shoes detected: {results.shoes_count}</p>
+                            <button
+                              onClick={async () => {
+                                const res = await fetch('/get-all-masks-with-classes');
+                                const data = await res.json();
+                                setEditableMasks(data.masks || []);
+                                setSelectedMaskIndices({ shirt: [], pants: [], shoes: [] });
+                                setShowMaskEditor(true);
+                              }}
+                              style={{
+                                marginTop: '10px',
+                                padding: '6px 15px',
+                                backgroundColor: '#e74c3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '14px'
+                              }}
+                            >
+                              🔄 Redo Selection
+                            </button>
                           </div>
                         </>
                       )}
@@ -551,6 +816,479 @@ function App() {
           )}
         </div>
       </div>
+      
+      {/* Debug Popup */}
+      {showDebug && debugInfo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '10px',
+            maxWidth: '800px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => setShowDebug(false)}
+              style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                fontSize: '24px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2>🔍 SigLIP Classification Debug Info - ALL {debugInfo.length} Masks</h2>
+            <p style={{ color: '#666', marginBottom: '20px' }}>
+              Showing what we sent to SigLIP and what it returned for ALL masks (not just filtered ones)
+            </p>
+            
+            {debugInfo.map((item, idx) => (
+              <div key={idx} style={{
+                marginBottom: '25px',
+                padding: '15px',
+                backgroundColor: item.kept ? '#e8f5e9' : '#ffebee',
+                borderRadius: '5px',
+                border: item.kept ? '2px solid #4caf50' : '2px solid #f44336',
+                opacity: item.kept ? 1 : 0.8
+              }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>
+                  Mask #{item.mask_number}: {item.full_label} ({(item.confidence * 100).toFixed(1)}%)
+                  {item.kept ? ' ✅ KEPT' : ' ❌ FILTERED OUT'}
+                </h3>
+                
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
+                  <div>
+                    <strong>Image sent to SigLIP:</strong>
+                    <div style={{ marginTop: '5px' }}>
+                      <img 
+                        src={`data:image/png;base64,${item.debug.input_image}`} 
+                        alt="Input to SigLIP"
+                        style={{ 
+                          maxWidth: '200px', 
+                          maxHeight: '200px',
+                          border: '2px solid #ddd',
+                          borderRadius: '5px'
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <strong>Mask Properties:</strong>
+                    <ul style={{ margin: '5px 0' }}>
+                      <li>Area: {item.debug.mask_area} pixels</li>
+                      <li>Y Position: {(item.debug.position_y * 100).toFixed(1)}% from top</li>
+                      <li>Aspect Ratio: {item.debug.aspect_ratio ? item.debug.aspect_ratio.toFixed(2) : 'N/A'}</li>
+                    </ul>
+                  </div>
+                </div>
+                
+                <div>
+                  <strong>Prompts we sent to SigLIP:</strong>
+                  <div style={{ 
+                    backgroundColor: 'white', 
+                    padding: '10px', 
+                    borderRadius: '3px',
+                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    marginTop: '5px'
+                  }}>
+                    [{item.debug.prompts.map(p => `"${p}"`).join(', ')}]
+                  </div>
+                </div>
+                
+                <div style={{ marginTop: '10px' }}>
+                  <strong>SigLIP Scores (what it thinks each prompt matches):</strong>
+                  <div style={{ marginTop: '5px' }}>
+                    {Object.entries(item.debug.all_scores)
+                      .sort(([,a], [,b]) => b - a)
+                      .slice(0, 3)
+                      .map(([prompt, score]) => (
+                        <div key={prompt} style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          padding: '3px 0',
+                          fontWeight: prompt === item.label ? 'bold' : 'normal',
+                          color: prompt === item.label ? '#2c3e50' : '#7f8c8d'
+                        }}>
+                          <span>{prompt}:</span>
+                          <span>{(score * 100).toFixed(1)}%</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+                
+                {!item.kept && (
+                  <div style={{ 
+                    marginTop: '10px', 
+                    padding: '10px', 
+                    backgroundColor: '#fff3cd',
+                    borderRadius: '5px',
+                    color: '#856404'
+                  }}>
+                    <strong>Why filtered out:</strong> 
+                    {item.confidence < 0.15 ? ' Low confidence' : 
+                     item.label === 'background' ? ' Detected as background' :
+                     item.label === 'non_clothing' ? ' Not clothing' :
+                     ' Not the best mask for this category'}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Raw SAM2 Segments Popup */}
+      {showRawSAM2 && results && results.raw_sam2_img && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '10px',
+            maxWidth: '90%',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => setShowRawSAM2(false)}
+              style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                fontSize: '24px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2 style={{ marginTop: '0', marginBottom: '20px' }}>
+              🎯 All SAM2 Detected Segments
+            </h2>
+            
+            <div style={{ textAlign: 'center' }}>
+              <img 
+                src={`data:image/png;base64,${results.raw_sam2_img}`}
+                alt="All SAM2 segments"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '70vh',
+                  objectFit: 'contain'
+                }}
+              />
+              <p style={{ marginTop: '20px', color: '#7f8c8d' }}>
+                Each colored region with a number represents a segment detected by SAM2.
+                <br />
+                Total segments: {results.raw_masks_count}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Mask Editor Popup */}
+      {showMaskEditor && editableMasks.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          overflow: 'auto'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '10px',
+            maxWidth: '90%',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => setShowMaskEditor(false)}
+              style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                fontSize: '24px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2 style={{ marginTop: '0', marginBottom: '20px' }}>
+              🔄 Redo {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Selection
+            </h2>
+            
+            <p style={{ marginBottom: '20px', color: '#666' }}>
+              Select which segments should be classified as <strong>{activeTab}</strong>. 
+              Click masks to select them. Green = currently selected.
+            </p>
+            
+            {/* Quick select button */}
+            <div style={{ marginBottom: '20px' }}>
+              <button
+                onClick={() => {
+                  // Select all masks currently labeled as this category
+                  const currentCategoryMasks = editableMasks
+                    .map((mask, idx) => mask.current_label === activeTab ? idx : -1)
+                    .filter(idx => idx !== -1);
+                  setSelectedMaskIndices({
+                    ...selectedMaskIndices,
+                    [activeTab]: currentCategoryMasks
+                  });
+                }}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer'
+                }}
+              >
+                Select current {activeTab} masks
+              </button>
+              
+              <button
+                onClick={() => {
+                  setSelectedMaskIndices({
+                    ...selectedMaskIndices,
+                    [activeTab]: []
+                  });
+                }}
+                style={{
+                  padding: '10px 20px',
+                  marginLeft: '10px',
+                  backgroundColor: '#95a5a6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer'
+                }}
+              >
+                Clear selection
+              </button>
+            </div>
+            
+            {/* Mask grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+              gap: '15px',
+              marginBottom: '20px'
+            }}>
+              {editableMasks.map((mask, idx) => (
+                <div 
+                  key={idx}
+                  onClick={() => {
+                    // Toggle selection for active category only
+                    const currentSelections = selectedMaskIndices[activeTab] || [];
+                    const isSelected = currentSelections.includes(idx);
+                    
+                    if (isSelected) {
+                      setSelectedMaskIndices({
+                        ...selectedMaskIndices,
+                        [activeTab]: currentSelections.filter(i => i !== idx)
+                      });
+                    } else {
+                      setSelectedMaskIndices({
+                        ...selectedMaskIndices,
+                        [activeTab]: [...currentSelections, idx]
+                      });
+                    }
+                  }}
+                  style={{
+                    cursor: 'pointer',
+                    border: `3px solid ${
+                      (selectedMaskIndices[activeTab] || []).includes(idx) ? '#27ae60' : '#ddd'
+                    }`,
+                    borderRadius: '5px',
+                    padding: '5px',
+                    position: 'relative'
+                  }}
+                >
+                  <img 
+                    src={`data:image/png;base64,${mask.image}`}
+                    alt={`Mask ${idx}`}
+                    style={{ width: '100%', height: 'auto' }}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: '5px',
+                    left: '5px',
+                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    color: 'white',
+                    padding: '2px 5px',
+                    borderRadius: '3px',
+                    fontSize: '12px'
+                  }}>
+                    #{idx + 1}
+                  </div>
+                  <div style={{
+                    marginTop: '5px',
+                    fontSize: '12px',
+                    textAlign: 'center'
+                  }}>
+                    <strong>{mask.current_label}</strong> ({(mask.confidence * 100).toFixed(0)}%)
+                    <br />
+                    {mask.top_predictions && (
+                      <span style={{ color: '#666' }}>
+                        Also: {mask.top_predictions.slice(0, 2).join(', ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                onClick={async () => {
+                  // Apply the new classifications for active category only
+                  const updates = {
+                    [activeTab]: selectedMaskIndices[activeTab] || []
+                  };
+                  
+                  const response = await fetch('/update-mask-classifications', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                      updates,
+                      preserveOthers: true  // Don't reset other categories
+                    })
+                  });
+                  
+                  if (response.ok) {
+                    const data = await response.json();
+                    setResults(data);
+                    setShowMaskEditor(false);
+                  }
+                }}
+                style={{
+                  padding: '12px 30px',
+                  backgroundColor: '#27ae60',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                ✓ Apply {activeTab} Selection
+              </button>
+              
+              <button
+                onClick={() => setShowMaskEditor(false)}
+                style={{
+                  padding: '12px 30px',
+                  backgroundColor: '#e74c3c',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* File Upload Modal */}
+      {showUpload && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '10px',
+            maxWidth: '600px',
+            width: '90%',
+            position: 'relative'
+          }}>
+            <button 
+              onClick={() => setShowUpload(false)}
+              style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                fontSize: '24px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#2c3e50' }}>
+              Upload Your Image
+            </h2>
+            
+            <FileUpload 
+              userId={currentUser.uid}
+              onUploadSuccess={handleUploadSuccess}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -33,13 +33,19 @@ if torch.backends.mps.is_available():
     print(f"MPS (Metal Performance Shaders) is available!")
     print(f"Using Apple Silicon GPU acceleration")
 
-# Add parent directory to path for imports
+# Add parent directory to path for imports (for SAM2 imports)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from transformers import AutoProcessor, AutoModel
 import time
+
+# Import configuration
+from config_improved import get_active_sam2_config, MODEL_OVERRIDES, SIGLIP_CONFIG, CLASSIFICATION_CONFIG, PERFORMANCE_CONFIG, DEBUG_CONFIG
+from improved_siglip_classification import classify_with_improved_prompts, classify_with_position_hints
+from fashion_siglip_classifier import classify_with_fashion_siglip, FashionSigLIPClassifier
+from clip_classifier import classify_with_clip
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -67,51 +73,64 @@ def load_models(model_size='large'):
     }
     
     if mask_gen is None or getattr(mask_gen, 'model_size', None) != model_size:
+        # Clear old model from memory if switching
+        if mask_gen is not None:
+            print(f"Clearing previous model from memory...")
+            del mask_gen
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                # Force memory cleanup on MPS (Apple Silicon)
+                import gc
+                gc.collect()
+                torch.mps.empty_cache()
+        
         print(f"Loading SAM2 {model_size.upper()} model...")
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         
         # Get config and checkpoint paths
         config_file, checkpoint_file = model_configs.get(model_size, model_configs['large'])
         
         # Change to parent directory to match working demo
         original_cwd = os.getcwd()
-        os.chdir(base_dir)
+        sam2_dir = os.path.dirname(base_dir)  # Go up one level to find SAM2
+        os.chdir(sam2_dir)
         
         try:
             # Load the selected model with optimizations
-            sam2 = build_sam2(config_file, checkpoint_file, device="mps", apply_postprocessing=False)
+            sam2 = build_sam2(config_file, checkpoint_file, device="mps", apply_postprocessing=True)
             
             # Enable optimizations for M4
             sam2.eval()  # Set to evaluation mode
             
-            # For SAM 2.1 models, use tuned parameters for better clothing detection
-            if 'v2.1' in model_size:
-                if 'tiny' in model_size or 'small' in model_size:
-                    # Balanced parameters for tiny/small models
-                    mask_gen = SAM2AutomaticMaskGenerator(
-                        sam2,
-                        points_per_side=32,  # Keep default
-                        points_per_batch=64,  # Default batch size
-                        pred_iou_thresh=0.82,  # Slightly lower threshold
-                        stability_score_thresh=0.88,  # Slightly lower stability
-                        crop_n_layers=0,  # Disable crops for speed
-                        crop_n_points_downscale_factor=1,
-                        min_mask_region_area=100,  # Standard min area
-                    )
-                else:
-                    # Base and Large models - balanced parameters
-                    mask_gen = SAM2AutomaticMaskGenerator(
-                        sam2,
-                        points_per_side=32,
-                        pred_iou_thresh=0.86,
-                        stability_score_thresh=0.92,
-                        crop_n_layers=0,
-                        crop_n_points_downscale_factor=1,
-                        min_mask_region_area=100,
-                    )
-            else:
-                # SAM 2.0 uses default parameters
-                mask_gen = SAM2AutomaticMaskGenerator(sam2)
+            # Get active configuration (Facebook's parameters)
+            config = get_active_sam2_config()
+            
+            # Apply model-specific overrides if any
+            model_key = model_size.replace('_v2.1', '').replace('large', 'large')
+            if model_key in MODEL_OVERRIDES:
+                config.update(MODEL_OVERRIDES[model_key])
+            
+            # Create mask generator with all Facebook parameters
+            mask_gen = SAM2AutomaticMaskGenerator(
+                sam2,
+                points_per_side=config["points_per_side"],
+                points_per_batch=config["points_per_batch"],
+                pred_iou_thresh=config["pred_iou_thresh"],
+                stability_score_thresh=config["stability_score_thresh"],
+                stability_score_offset=config.get("stability_score_offset", 1.0),  # NEW!
+                mask_threshold=0.0,  # Default
+                box_nms_thresh=config.get("box_nms_thresh", 0.7),  # NEW! Critical for deduplication
+                crop_n_layers=config.get("crop_n_layers", 0),
+                crop_nms_thresh=0.7,  # Default
+                crop_overlap_ratio=512/1500,  # Default
+                crop_n_points_downscale_factor=config.get("crop_n_points_downscale_factor", 1),
+                min_mask_region_area=config.get("min_mask_region_area", 0),
+                use_m2m=config.get("use_m2m", False),  # NEW! Mask refinement
+                multimask_output=True,  # Generate multiple masks per point
+            )
+            
+            print(f"SAM2 configured with {config['points_per_side']}x{config['points_per_side']} = {config['points_per_side']**2} points")
         finally:
             # Change back to original directory
             os.chdir(original_cwd)
@@ -149,16 +168,19 @@ def process_with_replicate(image_path):
         img_uri = f"data:image/png;base64,{img_data}"
     
     try:
-        # Run SAM-2 on Replicate
+        # Get active configuration to use with Replicate
+        config = get_active_sam2_config()
+        
+        # Run SAM-2 on Replicate with our config
         start_time = time.time()
         output = replicate.run(
             "meta/sam-2:fe97b453a6455861e3bac769b441ca1f1086110da7466dbb65cf1eecfd60dc83",
             input={
                 "image": img_uri,
-                "use_m2m": True,
-                "points_per_side": 32,
-                "pred_iou_thresh": 0.88,
-                "stability_score_thresh": 0.95
+                "use_m2m": config.get("use_m2m", True),
+                "points_per_side": config.get("points_per_side", 32),
+                "pred_iou_thresh": config.get("pred_iou_thresh", 0.88),
+                "stability_score_thresh": config.get("stability_score_thresh", 0.95)
             }
         )
         sam2_time = time.time() - start_time
@@ -238,60 +260,30 @@ def create_clothing_visualization(image_rgb, masks, clothing_type, for_gemini=Fa
     """
     # Filter for specific clothing type
     if clothing_type == "shirt":
-        type_labels = ["shirt", "t-shirt", "hoodie"]
+        type_labels = ["shirt"]
     elif clothing_type == "pants":
-        type_labels = ["pants", "jeans", "trousers"]
+        type_labels = ["pants"]
     elif clothing_type == "shoes":
-        type_labels = ["shoes", "sneakers"]
+        type_labels = ["shoes"]
     else:  # all items
-        type_labels = ["shirt", "t-shirt", "hoodie", "pants", "jeans", "trousers", "dress", "shoes", "sneakers"]
+        type_labels = ["shirt", "pants", "shoes"]
     
-    clothing_masks = [m for m in masks if m.get('label', '') in type_labels]
+    clothing_masks = [m for m in masks if m.get('label', '') in type_labels and not m.get('skip_viz', False)]
     
-    # Special handling for shoes - merge nearby shoe detections
+    # Special handling for shoes - but respect manual selections
     if clothing_type == "shoes" and len(clothing_masks) > 0:
-        # For SAM 2.1, also check for foot-like shapes in lower part of image
-        if len(clothing_masks) < 2:
-            # Look for any masks in the foot region that might be shoes
-            foot_region_masks = []
-            for m in masks:
-                if m.get('label') not in ['background', 'pants', 'jeans', 'trousers', 'shirt', 't-shirt', 'hoodie']:
-                    mask = m['segmentation']
-                    y_indices, x_indices = np.where(mask)
-                    if len(y_indices) > 0:
-                        center_y = y_indices.mean() / image_rgb.shape[0]
-                        area = m['area']
-                        # Look for masks in foot region with reasonable size
-                        if center_y > 0.7 and area > 200 and area < 10000:
-                            m['label'] = 'shoes'
-                            m['confidence'] = 0.7
-                            foot_region_masks.append(m)
-            
-            clothing_masks.extend(foot_region_masks)
+        # Check if these are manual selections (confidence = 1.0)
+        manual_selections = [m for m in clothing_masks if m.get('confidence', 0) == 1.0]
         
-        # Group shoes by proximity (left vs right foot)
-        shoe_groups = {'left': [], 'right': []}
-        image_center_x = image_rgb.shape[1] / 2
-        
-        for mask_dict in clothing_masks:
-            mask = mask_dict['segmentation']
-            y_indices, x_indices = np.where(mask)
-            if len(x_indices) > 0:
-                center_x = x_indices.mean()
-                if center_x < image_center_x:
-                    shoe_groups['right'].append(mask_dict)  # Right foot appears on left side of image
-                else:
-                    shoe_groups['left'].append(mask_dict)
-        
-        # Keep best shoe from each group
-        final_shoes = []
-        for group in shoe_groups.values():
-            if group:
-                # Sort by area and keep the largest
-                best_shoe = max(group, key=lambda x: x['area'])
-                final_shoes.append(best_shoe)
-        
-        clothing_masks = final_shoes
+        if manual_selections:
+            # User has manually selected shoes - use ALL of them
+            clothing_masks = manual_selections
+            print(f"  Using {len(manual_selections)} manually selected shoes")
+        else:
+            # Automatic selection - use the old logic but allow up to 2 shoes
+            if len(clothing_masks) > 2:
+                # Sort by confidence and take top 2
+                clothing_masks = sorted(clothing_masks, key=lambda x: x.get('confidence', 0), reverse=True)[:2]
     
     # Create visualization
     overlay = image_rgb.copy()
@@ -325,12 +317,93 @@ def create_clothing_visualization(image_rgb, masks, clothing_type, for_gemini=Fa
     
     return overlay, len(clothing_masks)
 
+def create_raw_sam2_visualization(image_rgb, masks):
+    """Create grid visualization of ALL raw SAM2 masks"""
+    h, w = image_rgb.shape[:2]
+    
+    # Calculate grid size
+    n_masks = len(masks)
+    cols = min(4, n_masks)  # Max 4 columns
+    rows = (n_masks + cols - 1) // cols
+    
+    # Create a large canvas
+    cell_size = 300
+    canvas_w = cols * cell_size + (cols + 1) * 10  # 10px padding
+    canvas_h = rows * cell_size + (rows + 1) * 10 + 50  # Extra space for title
+    canvas = np.ones((canvas_h, canvas_w, 3), dtype=np.uint8) * 240  # Light gray background
+    
+    # Add title
+    title = f"All SAM2 Segments: {n_masks} masks detected"
+    cv2.putText(canvas, title, (20, 35), 
+               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 2)
+    
+    # Sort masks by area (largest first)
+    masks_sorted = sorted(masks, key=lambda x: x.get('area', 0), reverse=True)
+    
+    # Colors for masks
+    colors = [
+        (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0),
+        (255, 0, 255), (0, 255, 255), (128, 255, 0), (255, 128, 0),
+        (128, 0, 255), (255, 0, 128), (0, 128, 255), (0, 255, 128)
+    ]
+    
+    for idx, mask_dict in enumerate(masks_sorted):
+        row = idx // cols
+        col = idx % cols
+        
+        # Calculate position in canvas
+        x_start = col * cell_size + (col + 1) * 10
+        y_start = row * cell_size + (row + 1) * 10 + 50
+        
+        # Create individual mask visualization
+        mask_viz = image_rgb.copy()
+        mask = mask_dict['segmentation']
+        
+        # Apply colored overlay to mask area only
+        mask_color = colors[idx % len(colors)]
+        mask_viz[mask] = mask_viz[mask] * 0.3 + np.array(mask_color) * 0.7
+        
+        # Draw mask boundary
+        contours, _ = cv2.findContours(mask.astype(np.uint8), 
+                                      cv2.RETR_EXTERNAL, 
+                                      cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(mask_viz, contours, -1, mask_color, 2)
+        
+        # Resize to cell size
+        scale = min(cell_size / h, cell_size / w)
+        new_h, new_w = int(h * scale), int(w * scale)
+        mask_viz_resized = cv2.resize(mask_viz, (new_w, new_h))
+        
+        # Center in cell
+        y_offset = (cell_size - new_h) // 2
+        x_offset = (cell_size - new_w) // 2
+        
+        # Place in canvas
+        canvas[y_start + y_offset:y_start + y_offset + new_h,
+               x_start + x_offset:x_start + x_offset + new_w] = mask_viz_resized
+        
+        # Add mask info
+        info_text = f"#{idx + 1}"
+        area_pct = (mask_dict['area'] / (h * w)) * 100
+        size_text = f"{area_pct:.1f}%"
+        
+        cv2.putText(canvas, info_text, (x_start + 10, y_start + 25), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+        cv2.putText(canvas, size_text, (x_start + 10, y_start + cell_size - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
+    
+    return canvas
+
 # Helper functions for mask storage
 def save_mask_images(image_path, image_rgb, masks):
-    """Save mask images as PNG files for each clothing type"""
+    """Save mask images as PNG files for each clothing type in organized folders"""
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         base_name = os.path.basename(image_path).split('.')[0]
+        
+        # Create dedicated folder for this image's masks
+        masks_dir = os.path.join(base_dir, 'data', 'saved_masks', base_name)
+        os.makedirs(masks_dir, exist_ok=True)
         
         # Save masks for each clothing type
         clothing_types = ['shirt', 'pants', 'shoes']
@@ -340,48 +413,47 @@ def save_mask_images(image_path, image_rgb, masks):
             mask_img, count = create_clothing_visualization(image_rgb, masks, clothing_type, for_gemini=True)
             
             if count > 0:
-                # Save the masked image
-                mask_filename = f"{base_name}_mask_{clothing_type}.png"
-                mask_path = os.path.join(base_dir, 'data', 'sample_images', 'people', mask_filename)
+                # Save the masked image in the dedicated folder
+                mask_filename = f"mask_{clothing_type}.png"
+                mask_path = os.path.join(masks_dir, mask_filename)
                 
                 # Convert to PIL and save
                 mask_pil = Image.fromarray(mask_img)
                 mask_pil.save(mask_path)
-                print(f"Saved {clothing_type} mask to {mask_filename}")
+                print(f"Saved {clothing_type} mask to {os.path.join(base_name, mask_filename)}")
         
-        # Also save the raw masks data
-        masks_dir = os.path.join(base_dir, 'data', 'saved_masks')
-        os.makedirs(masks_dir, exist_ok=True)
-        
-        masks_file = os.path.join(masks_dir, f"{base_name}_masks.pkl")
+        # Save the raw masks data in the same folder
+        masks_pkl_file = os.path.join(masks_dir, "masks.pkl")
         serializable_masks = []
         for mask in masks:
             mask_copy = mask.copy()
             mask_copy['segmentation'] = mask_copy['segmentation'].tolist()
             serializable_masks.append(mask_copy)
             
-        with open(masks_file, 'wb') as f:
+        with open(masks_pkl_file, 'wb') as f:
             pickle.dump({
                 'masks': serializable_masks,
                 'timestamp': datetime.now().isoformat(),
                 'image_path': image_path
             }, f)
             
-        print(f"Saved raw masks data to {masks_file}")
+        print(f"Saved raw masks data to {os.path.join(base_name, 'masks.pkl')}")
         
     except Exception as e:
         print(f"Error saving masks: {str(e)}")
 
-def load_masks_from_file(image_path, model_size):
-    """Load masks from a pickle file"""
+def load_masks_from_file(image_path):
+    """Load masks from the new organized folder structure"""
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        masks_dir = os.path.join(base_dir, 'saved_masks')
-        filename = get_mask_filename(image_path, model_size)
-        filepath = os.path.join(masks_dir, filename)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_name = os.path.basename(image_path).split('.')[0]
         
-        if os.path.exists(filepath):
-            with open(filepath, 'rb') as f:
+        # Look in the dedicated folder for this image
+        masks_dir = os.path.join(base_dir, 'data', 'saved_masks', base_name)
+        masks_file = os.path.join(masks_dir, "masks.pkl")
+        
+        if os.path.exists(masks_file):
+            with open(masks_file, 'rb') as f:
                 data = pickle.load(f)
                 
             # Convert lists back to numpy arrays
@@ -405,7 +477,7 @@ def serve_person_image(filename):
     """Serve person images"""
     try:
         print(f"Serving person image: {filename}")
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         image_dir = os.path.join(base_dir, 'data', 'sample_images', 'people')
         
         if not os.path.exists(os.path.join(image_dir, filename)):
@@ -422,7 +494,7 @@ def serve_garment_image(filename):
     """Serve garment images"""
     try:
         print(f"Serving garment image: {filename}")
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         image_dir = os.path.join(base_dir, 'data', 'sample_images', 'garments')
         
         if not os.path.exists(os.path.join(image_dir, filename)):
@@ -442,21 +514,79 @@ def process_image():
         # Get request data
         data = request.json
         image_path = data.get('image_path')
+        image_url = data.get('image_url')  # Firebase Storage URL
+        image_data = data.get('image_data')  # Base64 data URL
         model_size = data.get('model_size', 'large')
         
-        # Construct full path
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        full_image_path = os.path.join(base_dir, image_path)
+        # Validate input
+        if not image_path and not image_url and not image_data:
+            return jsonify({'error': 'No image source provided'}), 400
         
         # Load and process image
-        print(f"Loading image from: {full_image_path}")
-        if not os.path.exists(full_image_path):
-            return jsonify({'error': f'Image not found: {full_image_path}'}), 404
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        if image_data:
+            # Handle base64 data URL
+            print("Processing base64 image data")
+            try:
+                # Remove data URL prefix
+                if ',' in image_data:
+                    image_data = image_data.split(',')[1]
+                
+                # Decode base64
+                img_bytes = base64.b64decode(image_data)
+                nparr = np.frombuffer(img_bytes, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    return jsonify({'error': 'Failed to decode base64 image'}), 500
+                    
+                # For Replicate, we need to save temporarily
+                if model_size == 'replicate':
+                    temp_path = os.path.join(base_dir, 'temp_upload_image.jpg')
+                    cv2.imwrite(temp_path, image)
+                    full_image_path = temp_path
+                else:
+                    full_image_path = None
+                    
+            except Exception as e:
+                return jsonify({'error': f'Failed to process base64 image: {str(e)}'}), 500
+        elif image_url:
+            # Download from Firebase Storage URL
+            print(f"Downloading image from Firebase Storage: {image_url}")
+            try:
+                response = requests.get(image_url)
+                response.raise_for_status()
+                
+                # Convert to numpy array
+                nparr = np.frombuffer(response.content, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    return jsonify({'error': 'Failed to decode image from URL'}), 500
+                    
+                # For Replicate, we need to save temporarily
+                if model_size == 'replicate':
+                    temp_path = os.path.join(base_dir, 'temp_firebase_image.jpg')
+                    cv2.imwrite(temp_path, image)
+                    full_image_path = temp_path
+                else:
+                    full_image_path = None
+                    
+            except Exception as e:
+                return jsonify({'error': f'Failed to download image: {str(e)}'}), 500
+        else:
+            # Local file path
+            full_image_path = os.path.join(base_dir, image_path)
+            print(f"Loading image from: {full_image_path}")
             
-        image = cv2.imread(full_image_path)
-        if image is None:
-            return jsonify({'error': f'Failed to read image: {full_image_path}'}), 500
-            
+            if not os.path.exists(full_image_path):
+                return jsonify({'error': f'Image not found: {full_image_path}'}), 404
+                
+            image = cv2.imread(full_image_path)
+            if image is None:
+                return jsonify({'error': f'Failed to read image: {full_image_path}'}), 500
+                
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         # Check if using Replicate API
@@ -469,47 +599,282 @@ def process_image():
                 return jsonify({'error': f'Replicate API failed: {str(e)}'}), 500
         else:
             # Load models if not loaded or if model size changed
-            try:
-                load_models(model_size)
-            except Exception as e:
-                print(f"Model loading error: {str(e)}")
-                return jsonify({'error': f'Model loading failed: {str(e)}'}), 500
+            model_load_time = 0
+            if mask_gen is None or getattr(mask_gen, 'model_size', None) != model_size:
+                print(f"Loading models for {model_size}...")
+                start_load = time.time()
+                try:
+                    load_models(model_size)
+                except Exception as e:
+                    print(f"Model loading error: {str(e)}")
+                    return jsonify({'error': f'Model loading failed: {str(e)}'}), 500
+                model_load_time = time.time() - start_load
+                print(f"Model loading took {model_load_time:.2f} seconds")
             
             # Generate masks with SAM2
             print(f"Generating masks with {model_size} model...")
             start_sam2 = time.time()
+            
+            # First attempt with original image
             masks = mask_gen.generate(image_rgb)
+            
+            # If we get very few masks, try different strategies
+            if len(masks) < 5:
+                print(f"Only {len(masks)} masks found. Trying alternative approaches...")
+                
+                # Strategy 1: Try with enhanced image
+                lab = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2LAB)
+                l, a, b = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+                l = clahe.apply(l)
+                image_enhanced = cv2.merge([l, a, b])
+                image_enhanced = cv2.cvtColor(image_enhanced, cv2.COLOR_LAB2RGB)
+                
+                masks_enhanced = mask_gen.generate(image_enhanced)
+                
+                if len(masks_enhanced) > len(masks):
+                    masks = masks_enhanced
+                    print(f"Enhanced image gave {len(masks)} masks")
+                
+                # Strategy 2: If still few masks, temporarily adjust thresholds
+                if len(masks) < 5:
+                    print("Still too few masks. Temporarily lowering thresholds...")
+                    
+                    # Save original thresholds
+                    orig_iou = mask_gen.predictor.model.mask_threshold
+                    orig_stability = getattr(mask_gen, 'stability_score_thresh', 0.85)
+                    
+                    # Lower thresholds temporarily
+                    mask_gen.predictor.model.mask_threshold = 0.7
+                    mask_gen.pred_iou_thresh = 0.7
+                    mask_gen.stability_score_thresh = 0.8
+                    
+                    # Generate with lower thresholds
+                    masks_lowthresh = mask_gen.generate(image_rgb)
+                    
+                    # Restore original thresholds
+                    mask_gen.predictor.model.mask_threshold = orig_iou
+                    config = get_active_sam2_config()
+                    mask_gen.pred_iou_thresh = config["pred_iou_thresh"]
+                    mask_gen.stability_score_thresh = orig_stability
+                    
+                    if len(masks_lowthresh) > len(masks):
+                        masks = masks_lowthresh
+                        print(f"Lower thresholds gave {len(masks)} masks")
+            
             sam2_time = time.time() - start_sam2
             print(f"Generated {len(masks)} masks in {sam2_time:.2f} seconds")
+            
+            # ADAPTIVE RETRY WITH FACEBOOK'S DENSE CONFIG
+            if PERFORMANCE_CONFIG.get("adaptive_quality", True) and len(masks) < 5:
+                print(f"Low mask count ({len(masks)}), trying Facebook's dense configuration...")
+                
+                # Save current config
+                original_params = {
+                    'points_per_side': mask_gen.points_per_side,
+                    'pred_iou_thresh': mask_gen.pred_iou_thresh,
+                    'stability_score_thresh': mask_gen.stability_score_thresh,
+                    'crop_n_layers': mask_gen.crop_n_layers,
+                    'min_mask_region_area': mask_gen.min_mask_region_area,
+                    'use_m2m': getattr(mask_gen, 'use_m2m', False)
+                }
+                
+                # Apply Facebook's dense configuration
+                mask_gen.points_per_side = 64  # FB dense: 64x64 = 4096 points!
+                mask_gen.points_per_batch = 128
+                mask_gen.pred_iou_thresh = 0.7
+                mask_gen.stability_score_thresh = 0.92
+                mask_gen.stability_score_offset = 0.7
+                mask_gen.crop_n_layers = 1
+                mask_gen.min_mask_region_area = 25
+                if hasattr(mask_gen, 'use_m2m'):
+                    mask_gen.use_m2m = True
+                
+                # Retry generation
+                retry_start = time.time()
+                retry_masks = mask_gen.generate(image_rgb)
+                retry_time = time.time() - retry_start
+                
+                print(f"Dense config gave {len(retry_masks)} masks in {retry_time:.2f}s")
+                
+                if len(retry_masks) > len(masks):
+                    masks = retry_masks
+                    sam2_time += retry_time
+                
+                # Restore original settings
+                for key, value in original_params.items():
+                    if hasattr(mask_gen, key):
+                        setattr(mask_gen, key, value)
         
         # Sort by area
         masks = sorted(masks, key=lambda x: x['area'], reverse=True)
         
-        # Define clothing labels
-        clothing_labels = ["shirt", "t-shirt", "hoodie", "pants", "jeans", "trousers", "dress", "shoes", "sneakers", "person", "background", "face", "sky", "ground"]
-        
-        # Load SigLIP if using Replicate (since we need it for classification)
-        if model_size == 'replicate' and (processor is None or model is None):
-            print("Loading SigLIP for classification...")
-            processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224", use_fast=True)
-            model = AutoModel.from_pretrained("google/siglip-base-patch16-224")
-            model.eval()
+        # Print mask statistics for debugging
+        if DEBUG_CONFIG.get("print_mask_stats", False) and masks:
+            print("\n=== Mask Statistics ===")
+            print(f"Total masks: {len(masks)}")
             
-            # Move SigLIP to MPS for GPU acceleration
-            if torch.backends.mps.is_available():
-                model = model.to("mps")
-                print("SigLIP moved to MPS for GPU acceleration")
+            # Analyze mask quality
+            iou_scores = [m['predicted_iou'] for m in masks]
+            areas = [m['area'] for m in masks]
+            
+            print(f"IoU scores: min={min(iou_scores):.2f}, max={max(iou_scores):.2f}, avg={np.mean(iou_scores):.2f}")
+            print(f"Areas: min={min(areas)}, max={max(areas)}, avg={int(np.mean(areas))}")
+            
+            # Only show stability scores if available (not from Replicate)
+            if masks[0].get('stability_score') is not None:
+                stability_scores = [m['stability_score'] for m in masks]
+                print(f"Stability: min={min(stability_scores):.2f}, max={max(stability_scores):.2f}, avg={np.mean(stability_scores):.2f}")
+            
+            # Count by size
+            small = sum(1 for a in areas if a < 5000)
+            medium = sum(1 for a in areas if 5000 <= a < 50000)
+            large = sum(1 for a in areas if a >= 50000)
+            print(f"Size distribution: small={small}, medium={medium}, large={large}")
+            print("======================\n")
         
-        # Classify each mask with SigLIP
-        print(f"Classifying {len(masks)} masks with SigLIP...")
+        # Filter out obvious background masks before refinement
+        print(f"Filtering {len(masks)} raw masks...")
+        filtered_pre = []
+        image_area = image_rgb.shape[0] * image_rgb.shape[1]
+        
+        for mask_dict in masks:
+            area_ratio = mask_dict['area'] / image_area
+            
+            # Skip if too large (likely background)
+            if area_ratio > 0.8:
+                print(f"  Skipping large mask with area ratio {area_ratio:.2f}")
+                continue
+                
+            # Skip if mask touches all edges (likely background)
+            mask = mask_dict['segmentation']
+            if (mask[0, :].any() and mask[-1, :].any() and 
+                mask[:, 0].any() and mask[:, -1].any()):
+                print(f"  Skipping edge-touching mask")
+                continue
+            
+            filtered_pre.append(mask_dict)
+        
+        masks = filtered_pre
+        print(f"Pre-filtered to {len(masks)} potential clothing masks")
+        
+        # Save raw masks before refinement for visualization
+        raw_masks_for_viz = [m.copy() for m in masks]
+        
+        # Refine masks with advanced edge-aware processing
+        print("Refining mask edges with advanced processing...")
+        refined_masks = []
+        for mask_dict in masks:
+            mask = mask_dict['segmentation']
+            
+            # Convert boolean mask to uint8
+            mask_uint8 = mask.astype(np.uint8) * 255
+            
+            # Remove small noise with connected components
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_uint8, connectivity=8)
+            
+            # Keep only the largest connected component (excluding background)
+            if num_labels > 1:
+                areas = stats[1:, cv2.CC_STAT_AREA]  # Skip background
+                if len(areas) > 0:
+                    largest_label = np.argmax(areas) + 1
+                    mask_clean = (labels == largest_label).astype(np.uint8) * 255
+                else:
+                    mask_clean = mask_uint8
+            else:
+                mask_clean = mask_uint8
+            
+            # Apply bilateral filter for edge-preserving smoothing
+            mask_bilateral = cv2.bilateralFilter(mask_clean, 9, 75, 75)
+            
+            # Morphological gradient for edge detection
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            gradient = cv2.morphologyEx(mask_bilateral, cv2.MORPH_GRADIENT, kernel)
+            
+            # Combine original mask with gradient for better edges
+            mask_enhanced = cv2.addWeighted(mask_bilateral, 0.8, gradient, 0.2, 0)
+            
+            # Final threshold with OTSU for optimal binarization
+            _, mask_final = cv2.threshold(mask_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # One more closing operation to ensure solid masks
+            kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            mask_final = cv2.morphologyEx(mask_final, cv2.MORPH_CLOSE, kernel_close)
+            
+            # Update the mask and recompute area
+            new_mask = mask_final > 128
+            new_area = int(new_mask.sum())
+            
+            # Only keep if area is reasonable
+            if new_area > 100:  # Minimum area threshold
+                mask_dict['segmentation'] = new_mask
+                mask_dict['area'] = new_area
+                refined_masks.append(mask_dict)
+        
+        masks = refined_masks
+        print(f"Refined to {len(masks)} high-quality masks")
+        
+        # Define ALL labels like the working version
+        all_labels = [
+            # Upper body
+            "shirt", "t-shirt", "blouse", "top", "sweater", "hoodie", "jacket", "coat", "vest",
+            # Lower body
+            "pants", "jeans", "trousers", "shorts", "skirt", "leggings",
+            # Full body
+            "dress", "suit", "jumpsuit",
+            # Footwear
+            "shoes", "sneakers", "boots", "sandals", "heels",
+            # Accessories
+            "hat", "cap", "sunglasses", "glasses", "watch", "belt", "tie", "scarf",
+            "bag", "backpack", "purse",
+            # Non-clothing (for filtering)
+            "person", "face", "hair", "hand", "arm", "leg"
+        ]
+        
+        # Clothing-only labels for filtering
+        non_clothing = ["person", "face", "hair", "hand", "arm", "leg"]
+        clothing_labels = [l for l in all_labels if l not in non_clothing]
+        
+        # Load CLIP/SigLIP if using Replicate (since we need it for classification)
+        if model_size == 'replicate' and (processor is None or model is None):
+            USE_CLIP = DEBUG_CONFIG.get("use_clip_instead", False)
+            
+            if USE_CLIP:
+                print("Loading CLIP for classification (fast mode)...")
+                from transformers import CLIPProcessor, CLIPModel
+                processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14", use_fast=True)
+                model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+                model.eval()
+                
+                # Move CLIP to MPS for GPU acceleration
+                if torch.backends.mps.is_available():
+                    model = model.to("mps")
+                    print("CLIP moved to MPS for GPU acceleration")
+            else:
+                print("Loading SigLIP for classification...")
+                processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224", use_fast=True)
+                model = AutoModel.from_pretrained("google/siglip-base-patch16-224")
+                model.eval()
+                
+                # Move SigLIP to MPS for GPU acceleration
+                if torch.backends.mps.is_available():
+                    model = model.to("mps")
+                    print("SigLIP moved to MPS for GPU acceleration")
+        
+        # Classify each mask
+        classification_model = "CLIP" if DEBUG_CONFIG.get("use_clip_instead", False) else "SigLIP"
+        print(f"Classifying {len(masks)} masks with {classification_model}...")
+        print(f"Using labels: {all_labels[:10]}... (showing first 10 of {len(all_labels)})")
         start_siglip = time.time()
+        clothing_detections = {"shirt": 0, "pants": 0, "shoes": 0}
+        
         for i, mask_dict in enumerate(masks):
             if i % 10 == 0:
                 print(f"  Processing mask {i}/{len(masks)}...")
             mask = mask_dict['segmentation']
             
-            # Skip very large masks
-            if mask_dict['area'] > 0.5 * image_rgb.shape[0] * image_rgb.shape[1]:
+            # Skip very large masks based on config
+            if mask_dict['area'] > CLASSIFICATION_CONFIG["max_background_ratio"] * image_rgb.shape[0] * image_rgb.shape[1]:
                 mask_dict['label'] = 'background'
                 mask_dict['confidence'] = 1.0
                 continue
@@ -542,63 +907,365 @@ def process_image():
                 shoe_area_max = 5000
                 shoe_area_min = 500
             
-            # Position-based classification with adjusted thresholds
-            if mask_dict['area'] > shirt_area_min and mask_dict['area'] < shirt_area_max and center_y < 0.5:
-                position_hint = ["shirt", "hoodie", "t-shirt", "jacket"]
-            elif mask_dict['area'] > pants_area_min and mask_dict['area'] < pants_area_max and center_y > 0.4 and center_y < 0.8:
-                position_hint = ["pants", "jeans", "trousers"]
-            elif mask_dict['area'] < shoe_area_max and center_y > 0.75:  # Lowered from 0.8
-                if mask_dict['area'] < shoe_area_min:
-                    mask_dict['label'] = 'fragment'
-                    mask_dict['confidence'] = 0.0
-                    continue
-                position_hint = ["shoes", "sneakers"]
-            else:
-                position_hint = clothing_labels
+            # Better classification logic
+            aspect_ratio = (x_indices.max() - x_indices.min()) / (y_indices.max() - y_indices.min() + 1)
             
-            # Create masked image
-            masked_image = np.ones_like(image_rgb) * 255
-            masked_image[mask] = image_rgb[mask]
+            # Use ALL labels for classification (like the working version)
+            descriptive_hints = all_labels  # All 40+ options
             
-            # Get bounding box
+            # Create a proper isolated mask for classification
+            # Use the ORIGINAL image, not enhanced
             y_min, y_max = y_indices.min(), y_indices.max()
             x_min, x_max = x_indices.min(), x_indices.max()
-            cropped = masked_image[y_min:y_max+1, x_min:x_max+1]
+            
+            # Add padding around the crop
+            pad = 20
+            y_min_pad = max(0, y_min - pad)
+            y_max_pad = min(image_rgb.shape[0], y_max + pad)
+            x_min_pad = max(0, x_min - pad)
+            x_max_pad = min(image_rgb.shape[1], x_max + pad)
+            
+            # Create a white background image
+            crop_height = y_max_pad - y_min_pad
+            crop_width = x_max_pad - x_min_pad
+            masked_crop = np.ones((crop_height, crop_width, 3), dtype=np.uint8) * 255
+            
+            # Copy only the masked pixels from the original image
+            mask_crop = mask[y_min_pad:y_max_pad, x_min_pad:x_max_pad]
+            masked_crop[mask_crop] = image_rgb[y_min_pad:y_max_pad, x_min_pad:x_max_pad][mask_crop]
             
             # Convert to PIL
-            pil_img = Image.fromarray(cropped.astype(np.uint8))
+            pil_img = Image.fromarray(masked_crop)
             
-            # Classify
-            inputs = processor(text=position_hint, images=pil_img, return_tensors="pt", padding=True)
+            # Choose classification method based on config
+            USE_CLIP = DEBUG_CONFIG.get("use_clip_instead", False)
+            USE_FASHION_SIGLIP = DEBUG_CONFIG.get("use_fashion_siglip", True)
             
-            # Move inputs to MPS if available for GPU acceleration
-            if torch.backends.mps.is_available():
-                inputs = {k: v.to("mps") if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+            if USE_CLIP:
+                # Use CLIP for classification
+                classification_result = classify_with_clip(
+                    pil_img, processor, model, position_y=center_y, area_ratio=area_ratio
+                )
+                
+                detected_label = classification_result['label']
+                mask_dict['full_label'] = detected_label
+                mask_dict['confidence'] = classification_result['confidence']
+                all_scores = classification_result.get('all_scores', {})
+                
+                # For debug
+                descriptive_hints = list(all_scores.keys())
+                
+                # Store debug info for CLIP
+                mask_dict['debug_info'] = {
+                    'prompts': descriptive_hints,
+                    'all_scores': all_scores,
+                    'position_y': center_y,
+                    'mask_area': mask_dict['area'],
+                    'aspect_ratio': aspect_ratio,
+                    'model': 'CLIP'
+                }
+                
+            elif USE_FASHION_SIGLIP:
+                # Use Fashion SigLIP (best for clothing)
+                classification_result = classify_with_fashion_siglip(
+                    pil_img, processor, model, position_y=center_y, area_ratio=area_ratio
+                )
+                
+                detected_label = classification_result['label']
+                mask_dict['full_label'] = detected_label
+                mask_dict['confidence'] = classification_result['confidence']
+                all_scores = classification_result['all_scores']
+                
+                # Store multi-label results if available
+                if 'multi_labels' in classification_result:
+                    mask_dict['multi_labels'] = classification_result['multi_labels']
+                
+                # For debug
+                descriptive_hints = list(all_scores.keys())
+                
+            elif DEBUG_CONFIG.get("use_improved_siglip", False):
+                # Use improved classification with position hints
+                classification_result = classify_with_position_hints(
+                    pil_img, processor, model, mask_dict['area'], center_y, aspect_ratio
+                )
+                
+                detected_label = classification_result['label']
+                mask_dict['full_label'] = classification_result['raw_prompt']
+                mask_dict['confidence'] = classification_result['confidence']
+                all_scores = classification_result['all_scores']
+                
+                # For consistency with old code
+                descriptive_hints = list(all_scores.keys())
+                
+            else:
+                # Old classification method (backup)
+                inputs = processor(text=descriptive_hints, images=pil_img, return_tensors="pt", padding=True)
+                
+                # Move inputs to MPS if available for GPU acceleration
+                if torch.backends.mps.is_available():
+                    inputs = {k: v.to("mps") if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+                
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                    logits = outputs.logits_per_image[0]
+                    probs = torch.softmax(logits, dim=0)
+                
+                best_idx = probs.argmax().item()
+                mask_dict['full_label'] = descriptive_hints[best_idx]  # Keep full label for debug
+                mask_dict['confidence'] = probs[best_idx].item()
+                detected_label = descriptive_hints[best_idx]
+                
+                # Store all scores for old method
+                all_scores = {label: probs[i].item() for i, label in enumerate(descriptive_hints)}
             
-            with torch.no_grad():
-                outputs = model(**inputs)
-                logits = outputs.logits_per_image[0]
-                probs = torch.softmax(logits, dim=0)
+            mask_dict['debug_info'] = {
+                'prompts': descriptive_hints,
+                'all_scores': all_scores,
+                'position_y': center_y,
+                'mask_area': mask_dict['area'],
+                'aspect_ratio': aspect_ratio
+            }
             
-            best_idx = probs.argmax().item()
-            mask_dict['label'] = position_hint[best_idx]
-            mask_dict['confidence'] = probs[best_idx].item()
+            # Add mask ID for tracking
+            mask_dict['mask_id'] = i
+            
+            # Just use what SigLIP says, no corrections based on position
+            print(f"    Mask {i}: detected as '{detected_label}' ({mask_dict['confidence']:.1%}), y_pos={center_y:.2f}")
+            
+            # Store the original detected label
+            mask_dict['original_label'] = detected_label
+            mask_dict['original_confidence'] = mask_dict['confidence']
+            
+            # Mark non-clothing items but don't skip them
+            if detected_label in non_clothing:
+                mask_dict['label'] = 'non_clothing'
+                mask_dict['skip_viz'] = True  # Flag for visualization to skip
+            # Map to simple categories for visualization
+            elif detected_label in ["shirt", "t-shirt", "blouse", "top", "sweater", "hoodie", "jacket", "coat", "vest"]:
+                mask_dict['label'] = 'shirt'
+            elif detected_label in ["pants", "jeans", "trousers", "shorts", "skirt", "leggings"]:
+                mask_dict['label'] = 'pants'
+            elif detected_label in ["shoes", "sneakers", "boots", "sandals", "heels"]:
+                mask_dict['label'] = 'shoes'
+            elif detected_label in ["dress", "suit", "jumpsuit"]:
+                mask_dict['label'] = 'dress'
+            else:
+                # Accessories or other
+                mask_dict['label'] = detected_label
+            
+            # Count what we detected
+            if mask_dict['label'] in ['shirt', 'pants', 'shoes']:
+                clothing_detections[mask_dict['label']] += 1
+            
+            # Add the input image to debug info
+            if 'debug_info' in mask_dict:
+                debug_img_buffer = BytesIO()
+                pil_img.save(debug_img_buffer, format="PNG")
+                debug_img_base64 = base64.b64encode(debug_img_buffer.getvalue()).decode()
+                mask_dict['debug_info']['input_image'] = debug_img_base64
         
         siglip_time = time.time() - start_siglip
+        
+        # Post-process to keep only best masks for each category
+        print("\nPost-processing: Keeping best masks for each clothing type...")
+        
+        # Store ALL masks before filtering for debug
+        # First mark all masks as skip_viz by default
+        for mask in masks:
+            if 'skip_viz' not in mask:
+                mask['skip_viz'] = True
+        
+        # We'll update this after filtering
+        process_image.last_all_masks = masks.copy()
+        
+        # Group masks by category
+        category_masks = {
+            'shirt': [],
+            'pants': [],
+            'shoes': [],
+            'dress': [],
+            'other': []
+        }
+        
+        for mask in masks:
+            label = mask.get('label', '')
+            if label in category_masks:
+                category_masks[label].append(mask)
+            elif label not in ['non_clothing', 'background'] and not mask.get('skip_viz', False):
+                category_masks['other'].append(mask)
+        
+        # Keep only the best mask for each category (except shoes)
+        filtered_masks = []
+        
+        # For shirt, pants, dress - keep only the highest confidence one
+        # Category-specific confidence thresholds
+        MIN_CONFIDENCE = {
+            'shirt': 0.20,  # 20% for shirts
+            'pants': 0.05,  # 5% for pants/shorts (they often have low confidence)
+            'dress': 0.15   # 15% for dresses
+        }
+        
+        for category in ['shirt', 'pants', 'dress']:
+            if category_masks[category]:
+                # Sort by confidence and take the best one
+                best_mask = max(category_masks[category], key=lambda x: x.get('confidence', 0))
+                
+                # Only include if confidence is high enough
+                if best_mask.get('confidence', 0) >= MIN_CONFIDENCE.get(category, 0.15):
+                    best_mask['skip_viz'] = False  # Ensure this mask is marked for visualization
+                    filtered_masks.append(best_mask)
+                    print(f"  Best {category}: {best_mask['full_label']} ({best_mask['confidence']:.1%})")
+                else:
+                    print(f"  Skipping low confidence {category}: {best_mask['full_label']} ({best_mask['confidence']:.1%})")
+        
+        # For shoes - keep up to 2 (left and right)
+        if category_masks['shoes']:
+            # Filter out low confidence shoes (likely floor/background)
+            MIN_SHOE_CONFIDENCE = 0.30  # 30% minimum for shoes
+            shoe_masks = [m for m in category_masks['shoes'] if m.get('confidence', 0) >= MIN_SHOE_CONFIDENCE]
+            
+            if shoe_masks:
+                shoe_masks = sorted(shoe_masks, key=lambda x: x.get('confidence', 0), reverse=True)
+                
+                # Try to identify left and right shoes
+                if len(shoe_masks) >= 2:
+                    # Sort by x-position to get left and right
+                    shoe_masks_by_x = sorted(shoe_masks[:4], key=lambda x: np.where(x['segmentation'])[1].mean())
+                
+                    # Take leftmost and rightmost with good confidence
+                    left_shoe = shoe_masks_by_x[0]
+                    right_shoe = shoe_masks_by_x[-1]
+                    
+                    # Make sure they're actually different shoes
+                    left_x = np.where(left_shoe['segmentation'])[1].mean()
+                    right_x = np.where(right_shoe['segmentation'])[1].mean()
+                    
+                    if abs(right_x - left_x) > image_rgb.shape[1] * 0.1:  # At least 10% image width apart
+                        left_shoe['skip_viz'] = False
+                        right_shoe['skip_viz'] = False
+                        filtered_masks.extend([left_shoe, right_shoe])
+                        print(f"  Left shoe: {left_shoe['full_label']} ({left_shoe['confidence']:.1%})")
+                        print(f"  Right shoe: {right_shoe['full_label']} ({right_shoe['confidence']:.1%})")
+                    else:
+                        # Too close, just take the best one
+                        shoe_masks[0]['skip_viz'] = False
+                        filtered_masks.append(shoe_masks[0])
+                        print(f"  Best shoe: {shoe_masks[0]['full_label']} ({shoe_masks[0]['confidence']:.1%})")
+                else:
+                    # Only one shoe detected
+                    shoe_masks[0]['skip_viz'] = False
+                    filtered_masks.append(shoe_masks[0])
+                    print(f"  Single shoe: {shoe_masks[0]['full_label']} ({shoe_masks[0]['confidence']:.1%})")
+        
+        # Add non-clothing masks back (but marked as skip_viz)
+        for mask in masks:
+            if mask.get('label') == 'non_clothing' or mask.get('skip_viz', False):
+                filtered_masks.append(mask)
+        
+        # Update masks and counts
+        masks = filtered_masks
+        clothing_detections = {
+            'shirt': len([m for m in masks if m.get('label') == 'shirt']),
+            'pants': len([m for m in masks if m.get('label') == 'pants']),
+            'shoes': len([m for m in masks if m.get('label') == 'shoes'])
+        }
+        
         total_time = sam2_time + siglip_time
         
-        # Store masks globally for Gemini
-        process_image.last_masks = masks
-        process_image.last_image_path = image_path
+        print(f"\nFinal Detection Summary:")
+        print(f"  Shirts: {clothing_detections['shirt']}")
+        print(f"  Pants: {clothing_detections['pants']}")
+        print(f"  Shoes: {clothing_detections['shoes']}")
         
-        # Save mask images permanently
-        save_mask_images(image_path, image_rgb, masks)
+        # Store masks globally for Gemini and editing
+        process_image.last_masks = masks
+        process_image.last_image_path = image_path if image_path else "temp_firebase_image.jpg"
+        process_image.last_image_rgb = image_rgb  # Store for mask editor
+        
+        # Update the stored all_masks with the final labels from filtered masks
+        # This ensures that when we edit, we know which masks were selected
+        for filtered_mask in filtered_masks:
+            if filtered_mask.get('label') in ['shirt', 'pants', 'shoes'] and not filtered_mask.get('skip_viz', False):
+                # Find this mask in the all_masks list and update its skip_viz
+                for stored_mask in process_image.last_all_masks:
+                    if abs(stored_mask['area'] - filtered_mask['area']) < 10 and \
+                       abs(stored_mask['bbox'][0] - filtered_mask['bbox'][0]) < 5:
+                        stored_mask['skip_viz'] = False
+                        stored_mask['label'] = filtered_mask['label']
+                        break
+        
+        # Save mask images permanently (only if we have a local path)
+        if image_path:
+            save_mask_images(image_path, image_rgb, masks)
+        
+        # Create RAW SAM2 masks visualization (before classification filtering)
+        raw_sam2_img = create_raw_sam2_visualization(image_rgb, raw_masks_for_viz)
         
         # Create visualizations without labels (all in Gemini format)
         all_items_img, all_items_count = create_clothing_visualization(image_rgb, masks, "all", for_gemini=True)
         shirt_img, shirt_count = create_clothing_visualization(image_rgb, masks, "shirt", for_gemini=True)
         pants_img, pants_count = create_clothing_visualization(image_rgb, masks, "pants", for_gemini=True)
         shoes_img, shoes_count = create_clothing_visualization(image_rgb, masks, "shoes", for_gemini=True)
+        
+        # Log timing breakdown
+        print(f"\n=== Timing Breakdown ===")
+        print(f"Model loading: {model_load_time:.2f}s" if 'model_load_time' in locals() else "Model already loaded")
+        print(f"SAM2 inference: {sam2_time:.2f}s")
+        print(f"{classification_model} classification: {siglip_time:.2f}s")
+        print(f"Total processing: {total_time:.2f}s")
+        print(f"=======================\n")
+        
+        # Prepare masks data with cropped images for editor
+        # IMPORTANT: Use last_all_masks which has the updated labels
+        all_masks_for_editor = process_image.last_all_masks
+        masks_with_crops = []
+        print(f"Preparing {len(all_masks_for_editor)} masks for editor (showing all detected masks)")
+        
+        # Debug: show what masks have which labels
+        print("Mask labels in all_masks_for_editor:")
+        for i, m in enumerate(all_masks_for_editor[:5]):  # Show first 5
+            print(f"  Mask {i}: label={m.get('label', 'NONE')}, skip_viz={m.get('skip_viz', 'NONE')}, original_label={m.get('original_label', 'NONE')}")
+        
+        for idx, mask in enumerate(all_masks_for_editor):
+            # Create cropped image of the mask area
+            segmentation = mask['segmentation']
+            bbox = mask['bbox']
+            x, y, w, h = [int(v) for v in bbox]
+            
+            # Create masked region
+            masked = image_rgb.copy()
+            masked[~segmentation] = 255  # White background
+            
+            # Crop to bounding box
+            cropped = masked[y:y+h, x:x+w]
+            
+            # Convert to base64
+            pil_crop = Image.fromarray(cropped)
+            buffer = BytesIO()
+            pil_crop.save(buffer, format="PNG")
+            crop_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            # Get the classification info directly from the mask
+            # Since raw_masks_for_viz is just last_all_masks, it should have all the data
+            label = mask.get('label', 'unknown')
+            full_label = mask.get('full_label', mask.get('original_label', label))
+            confidence = mask.get('confidence', mask.get('original_confidence', 0))
+            original_label = mask.get('original_label', label)
+            mask_id = mask.get('mask_id', idx)
+            
+            masks_with_crops.append({
+                'label': label,
+                'full_label': full_label,
+                'confidence': confidence,
+                'original_label': original_label,
+                'original_confidence': mask.get('original_confidence', confidence),
+                'mask_id': mask_id,
+                'cropped_img': crop_base64,
+                'bbox': bbox,
+                'area': mask['area'],
+                'index': idx,  # Track original index
+                'skip_viz': mask.get('skip_viz', label == 'non_clothing')  # Track if it's currently shown
+            })
         
         # Return results
         return jsonify({
@@ -612,7 +1279,10 @@ def process_image():
             'pants_img': image_to_base64(pants_img),
             'pants_count': pants_count,
             'shoes_img': image_to_base64(shoes_img),
-            'shoes_count': shoes_count
+            'shoes_count': shoes_count,
+            'raw_sam2_img': image_to_base64(raw_sam2_img),
+            'raw_masks_count': len(raw_masks_for_viz),
+            'masks': masks_with_crops  # Include for editor
         })
     
     except Exception as e:
@@ -625,14 +1295,22 @@ def process_image():
 def quick_load_masks(filename):
     """Quick load pre-generated masks for an image"""
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         base_name = filename.split('.')[0]
         
-        # Check if mask images exist
+        # Look in the dedicated folder for this image
+        masks_dir = os.path.join(base_dir, 'data', 'saved_masks', base_name)
+        
+        # Check if the folder exists
+        if not os.path.exists(masks_dir):
+            # Try old location for backward compatibility
+            return quick_load_masks_legacy(filename)
+        
+        # Check if mask images exist in new location
         mask_files = {}
         for clothing_type in ['shirt', 'pants', 'shoes']:
-            mask_filename = f"{base_name}_mask_{clothing_type}.png"
-            mask_path = os.path.join(base_dir, 'data', 'sample_images', 'people', mask_filename)
+            mask_filename = f"mask_{clothing_type}.png"
+            mask_path = os.path.join(masks_dir, mask_filename)
             if os.path.exists(mask_path):
                 # Read and convert to base64
                 with open(mask_path, 'rb') as f:
@@ -640,10 +1318,10 @@ def quick_load_masks(filename):
                 mask_files[clothing_type] = mask_data
         
         if mask_files:
-            # Also load the raw masks data if available
-            masks_file = os.path.join(base_dir, 'data', 'saved_masks', f"{base_name}_masks.pkl")
-            if os.path.exists(masks_file):
-                with open(masks_file, 'rb') as f:
+            # Load the raw masks data
+            masks_pkl = os.path.join(masks_dir, "masks.pkl")
+            if os.path.exists(masks_pkl):
+                with open(masks_pkl, 'rb') as f:
                     data = pickle.load(f)
                     masks = []
                     for mask in data['masks']:
@@ -655,11 +1333,6 @@ def quick_load_masks(filename):
                     process_image.last_image_path = filename
             
             # Count items for each type
-            counts = {}
-            for clothing_type in ['shirt', 'pants', 'shoes']:
-                if clothing_type in mask_files:
-                    counts[f"{clothing_type}_count"] = 1  # Simplified - just say 1 if mask exists
-            
             return jsonify({
                 'success': True,
                 'has_masks': True,
@@ -679,6 +1352,41 @@ def quick_load_masks(filename):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def quick_load_masks_legacy(filename):
+    """Load masks from old location for backward compatibility"""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_name = filename.split('.')[0]
+        
+        # Check old location
+        mask_files = {}
+        for clothing_type in ['shirt', 'pants', 'shoes']:
+            mask_filename = f"{base_name}_mask_{clothing_type}.png"
+            mask_path = os.path.join(base_dir, 'data', 'sample_images', 'people', mask_filename)
+            if os.path.exists(mask_path):
+                with open(mask_path, 'rb') as f:
+                    mask_data = base64.b64encode(f.read()).decode()
+                mask_files[clothing_type] = mask_data
+        
+        if mask_files:
+            return jsonify({
+                'success': True,
+                'has_masks': True,
+                'all_items_img': mask_files.get('shirt', ''),
+                'shirt_img': mask_files.get('shirt', ''),
+                'pants_img': mask_files.get('pants', ''),
+                'shoes_img': mask_files.get('shoes', ''),
+                'all_items_count': len(mask_files),
+                'shirt_count': 1 if 'shirt' in mask_files else 0,
+                'pants_count': 1 if 'pants' in mask_files else 0,
+                'shoes_count': 1 if 'shoes' in mask_files else 0,
+                'from_saved': True,
+                'legacy': True
+            })
+        return jsonify({'success': False, 'has_masks': False})
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/load-saved-masks', methods=['POST'])
@@ -701,14 +1409,15 @@ def load_saved_masks():
             return jsonify({'error': 'No saved masks found'}), 404
         
         # Load original image
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         full_image_path = os.path.join(base_dir, image_path)
         image = cv2.imread(full_image_path)
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Store masks globally for Gemini
+        # Store masks globally for Gemini and editing
         process_image.last_masks = masks
         process_image.last_image_path = image_path
+        process_image.last_image_rgb = image_rgb  # Store for mask editor
         
         # Create visualizations without labels (all in Gemini format)
         all_items_img, all_items_count = create_clothing_visualization(image_rgb, masks, "all", for_gemini=True)
@@ -742,16 +1451,295 @@ def load_saved_masks():
 def get_garments():
     """Get list of available garment images"""
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         garments_dir = os.path.join(base_dir, 'data', 'sample_images', 'garments')
         
         garments = []
         if os.path.exists(garments_dir):
             for file in os.listdir(garments_dir):
-                if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.avif')):
                     garments.append(file)
         
         return jsonify({'garments': sorted(garments)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/process-sam2-only', methods=['POST'])
+def process_sam2_only():
+    """Process image with SAM2 only - no classification, just return all masks"""
+    global mask_gen
+    
+    try:
+        data = request.json
+        image_path = data.get('image_path')
+        model_size = data.get('model_size', 'large')
+        
+        # Load image
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        full_image_path = os.path.join(base_dir, image_path)
+        image = cv2.imread(full_image_path)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        # Store original size
+        orig_h, orig_w = image_rgb.shape[:2]
+        
+        # Resize for faster processing if image is large
+        max_size = 768  # Process at lower resolution
+        if orig_h > max_size or orig_w > max_size:
+            scale = max_size / max(orig_h, orig_w)
+            new_h, new_w = int(orig_h * scale), int(orig_w * scale)
+            image_rgb_small = cv2.resize(image_rgb, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            print(f"Resized image from {orig_w}x{orig_h} to {new_w}x{new_h} for faster processing")
+        else:
+            image_rgb_small = image_rgb
+            scale = 1.0
+        
+        # Load model if needed
+        if mask_gen is None or getattr(mask_gen, 'model_size', None) != model_size:
+            return jsonify({'error': 'Model not loaded. Run full process first.'}), 400
+        
+        # Generate masks
+        start_time = time.time()
+        masks = mask_gen.generate(image_rgb)
+        inference_time = time.time() - start_time
+        
+        # Create visualization with all masks in different colors
+        overlay = image_rgb.copy()
+        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), 
+                  (255, 0, 255), (0, 255, 255), (128, 255, 0), (255, 128, 0),
+                  (128, 0, 255), (255, 0, 128), (0, 128, 255), (0, 255, 128)]
+        
+        # Only show top 20 masks by area
+        masks_sorted = sorted(masks, key=lambda x: x['area'], reverse=True)[:20]
+        
+        for i, mask_dict in enumerate(masks_sorted):
+            mask = mask_dict['segmentation']
+            color = colors[i % len(colors)]
+            
+            # Apply colored mask
+            mask_colored = np.zeros_like(overlay)
+            mask_colored[mask] = color
+            overlay = cv2.addWeighted(overlay, 0.7, mask_colored, 0.3, 0)
+        
+        # Convert to base64
+        img_base64 = image_to_base64(overlay)
+        
+        return jsonify({
+            'success': True,
+            'mask_count': len(masks),
+            'inference_time': inference_time,
+            'visualization': img_base64,
+            'top_20_masks': len(masks_sorted)
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get-all-masks-with-classes', methods=['GET'])
+def get_all_masks_with_classes():
+    """Get all masks with their classifications for editing"""
+    try:
+        if hasattr(process_image, 'last_all_masks') and process_image.last_all_masks:
+            # Get the stored image
+            if hasattr(process_image, 'last_image_rgb'):
+                image_rgb = process_image.last_image_rgb
+            else:
+                # Load image if not stored
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                full_path = os.path.join(base_dir, process_image.last_image_path) if hasattr(process_image, 'last_image_path') else None
+                if full_path and os.path.exists(full_path):
+                    image = cv2.imread(full_path)
+                    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                else:
+                    return jsonify({'masks': []})
+            
+            mask_data = []
+            for i, mask in enumerate(process_image.last_all_masks):
+                # Create individual mask image
+                mask_seg = mask.get('segmentation')
+                if mask_seg is None:
+                    continue
+                    
+                # Extract the masked region
+                y_indices, x_indices = np.where(mask_seg)
+                if len(y_indices) == 0:
+                    continue
+                    
+                y_min, y_max = y_indices.min(), y_indices.max()
+                x_min, x_max = x_indices.min(), x_indices.max()
+                
+                # Add padding
+                pad = 20
+                y_min_pad = max(0, y_min - pad)
+                y_max_pad = min(image_rgb.shape[0], y_max + pad)
+                x_min_pad = max(0, x_min - pad)
+                x_max_pad = min(image_rgb.shape[1], x_max + pad)
+                
+                # Create white background with mask
+                crop_height = y_max_pad - y_min_pad
+                crop_width = x_max_pad - x_min_pad
+                masked_crop = np.ones((crop_height, crop_width, 3), dtype=np.uint8) * 255
+                mask_crop = mask_seg[y_min_pad:y_max_pad, x_min_pad:x_max_pad]
+                masked_crop[mask_crop] = image_rgb[y_min_pad:y_max_pad, x_min_pad:x_max_pad][mask_crop]
+                
+                # Convert to base64
+                pil_img = Image.fromarray(masked_crop)
+                buffer = BytesIO()
+                pil_img.save(buffer, format="PNG")
+                img_base64 = base64.b64encode(buffer.getvalue()).decode()
+                
+                # Get classification info
+                current_label = mask.get('label', 'unknown')
+                confidence = mask.get('confidence', 0.0)
+                
+                # Get top predictions from debug info if available
+                top_predictions = []
+                if 'debug_info' in mask and 'all_scores' in mask['debug_info']:
+                    scores = mask['debug_info']['all_scores']
+                    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+                    top_predictions = [label for label, score in sorted_scores[:5] 
+                                     if label not in ['person', 'face', 'background', 'rock', 'stone', 'ground']]
+                
+                mask_data.append({
+                    'index': i,
+                    'image': img_base64,
+                    'current_label': current_label,
+                    'confidence': confidence,
+                    'top_predictions': top_predictions,
+                    'area': mask.get('area', 0),
+                    'position_y': mask.get('debug_info', {}).get('position_y', 0.5)
+                })
+            
+            return jsonify({'masks': mask_data})
+        
+        return jsonify({'masks': []})
+    except Exception as e:
+        print(f"Error in get_all_masks_with_classes: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'masks': [], 'error': str(e)})
+
+@app.route('/update-mask-classifications', methods=['POST'])
+def update_mask_classifications():
+    """Update mask classifications based on user edits"""
+    try:
+        data = request.json
+        updates = data.get('updates', {})
+        preserve_others = data.get('preserveOthers', False)
+        
+        if not hasattr(process_image, 'last_all_masks') or not hasattr(process_image, 'last_image_rgb'):
+            return jsonify({'error': 'No masks available'}), 400
+        
+        if preserve_others:
+            # Only reset masks for the categories being updated
+            for category in updates.keys():
+                for mask in process_image.last_all_masks:
+                    if mask.get('label') == category:
+                        mask['label'] = 'unknown'
+                        mask['skip_viz'] = True
+        else:
+            # Reset all mask labels
+            for mask in process_image.last_all_masks:
+                if mask.get('label') in ['shirt', 'pants', 'shoes']:
+                    mask['label'] = 'unknown'
+                    mask['skip_viz'] = True
+        
+        # Apply new classifications
+        for category, indices in updates.items():
+            for idx in indices:
+                if 0 <= idx < len(process_image.last_all_masks):
+                    process_image.last_all_masks[idx]['label'] = category
+                    process_image.last_all_masks[idx]['skip_viz'] = False
+        
+        # Update the filtered masks
+        process_image.last_masks = [m for m in process_image.last_all_masks 
+                                   if m.get('label') in ['shirt', 'pants', 'shoes'] and not m.get('skip_viz', False)]
+        
+        # Recreate visualizations
+        image_rgb = process_image.last_image_rgb
+        
+        # Create visualizations
+        all_items_img, all_items_count = create_clothing_visualization(image_rgb, process_image.last_masks, "all", for_gemini=True)
+        shirt_img, shirt_count = create_clothing_visualization(image_rgb, process_image.last_masks, "shirt", for_gemini=True)
+        pants_img, pants_count = create_clothing_visualization(image_rgb, process_image.last_masks, "pants", for_gemini=True)
+        shoes_img, shoes_count = create_clothing_visualization(image_rgb, process_image.last_masks, "shoes", for_gemini=True)
+        
+        return jsonify({
+            'all_items_img': image_to_base64(all_items_img),
+            'all_items_count': all_items_count,
+            'shirt_img': image_to_base64(shirt_img),
+            'shirt_count': shirt_count,
+            'pants_img': image_to_base64(pants_img),
+            'pants_count': pants_count,
+            'shoes_img': image_to_base64(shoes_img),
+            'shoes_count': shoes_count,
+            'success': True
+        })
+        
+    except Exception as e:
+        print(f"Error in update_mask_classifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get-debug-info', methods=['GET'])
+def get_debug_info():
+    """Get debug info from last processing - ALL masks before filtering"""
+    try:
+        if hasattr(process_image, 'last_all_masks') and process_image.last_all_masks:
+            debug_data = []
+            
+            # Create a set of kept mask IDs for faster lookup
+            kept_mask_ids = set()
+            if hasattr(process_image, 'last_masks'):
+                for mask in process_image.last_masks:
+                    # Use area and position as unique identifier
+                    mask_id = (mask.get('area', 0), 
+                              mask.get('bbox', [0,0,0,0])[0],
+                              mask.get('bbox', [0,0,0,0])[1])
+                    kept_mask_ids.add(mask_id)
+            
+            # Show ALL masks, not just filtered ones
+            for i, mask in enumerate(process_image.last_all_masks):
+                if 'debug_info' in mask:
+                    # Check if this mask was kept
+                    mask_id = (mask.get('area', 0),
+                              mask.get('bbox', [0,0,0,0])[0], 
+                              mask.get('bbox', [0,0,0,0])[1])
+                    was_kept = mask_id in kept_mask_ids
+                    
+                    debug_data.append({
+                        'mask_number': i + 1,
+                        'label': mask.get('label', 'unknown'),
+                        'full_label': mask.get('full_label', mask.get('label', 'unknown')),
+                        'confidence': mask.get('confidence', 0),
+                        'debug': mask['debug_info'],
+                        'kept': was_kept
+                    })
+            return jsonify({'debug_data': debug_data})
+        return jsonify({'debug_data': []})
+    except Exception as e:
+        print(f"Error in get_debug_info: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'debug_data': [], 'error': str(e)})
+
+@app.route('/people', methods=['GET'])
+def get_people():
+    """Get list of available person images"""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        people_dir = os.path.join(base_dir, 'data', 'sample_images', 'people')
+        
+        people = []
+        if os.path.exists(people_dir):
+            for file in os.listdir(people_dir):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg')) and not '_mask_' in file:
+                    people.append(file)
+        
+        return jsonify({'people': sorted(people)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -770,7 +1758,7 @@ def get_gemini_data():
             return jsonify({'error': 'No masks available. Generate masks first.'}), 400
         
         # Load original image
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         full_image_path = os.path.join(base_dir, image_path)
         image = cv2.imread(full_image_path)
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -858,7 +1846,7 @@ def gemini_tryon():
         mask_pil = Image.open(BytesIO(mask_img_data))  # Keep as RGBA
         
         # Load garment image
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         garment_path = os.path.join(base_dir, 'data', 'sample_images', 'garments', garment_file)
         garment_pil = Image.open(garment_path).convert('RGB')
         
@@ -929,5 +1917,164 @@ def gemini_tryon():
         traceback.print_exc()
         return jsonify({'error': f'Gemini API error: {str(e)}'}), 500
 
+@app.route('/update-mask-labels', methods=['POST'])
+def update_mask_labels():
+    """Update mask labels based on user selection and regenerate visualizations"""
+    try:
+        data = request.json
+        mask_selections = data.get('mask_selections', {})
+        
+        if not hasattr(process_image, 'last_all_masks'):
+            return jsonify({'error': 'No masks available'}), 404
+            
+        # Use ALL masks, not just filtered ones
+        all_masks = process_image.last_all_masks
+        image_rgb = process_image.last_image_rgb
+        
+        print(f"Updating mask labels - total masks: {len(all_masks)}, selections: {mask_selections}")
+        
+        # First, preserve the current good detections
+        current_detections = {}
+        for idx, mask in enumerate(all_masks):
+            if mask.get('label') in ['shirt', 'pants', 'shoes'] and not mask.get('skip_viz', False):
+                category = mask['label']
+                if category not in current_detections:
+                    current_detections[category] = []
+                current_detections[category].append(idx)
+        
+        print(f"Current detections before update: {current_detections}")
+        
+        # Store original confidence scores before resetting
+        original_scores = {}
+        for idx, mask in enumerate(all_masks):
+            original_scores[idx] = {
+                'confidence': mask.get('confidence', 0),
+                'full_label': mask.get('full_label', ''),
+                'original_label': mask.get('original_label', mask.get('label', 'unknown'))
+            }
+        
+        # Reset all labels first
+        for mask in all_masks:
+            mask['label'] = 'non_clothing'
+            mask['skip_viz'] = True
+        
+        # Apply ALL selections (both old and new)
+        for category, indices in mask_selections.items():
+            print(f"  Category {category}: applying to indices {indices}")
+            for idx in indices:
+                if 0 <= idx < len(all_masks):
+                    all_masks[idx]['label'] = category
+                    all_masks[idx]['skip_viz'] = False
+                    
+                    # Check if this is a new manual selection or keeping existing
+                    was_already_this_category = (idx in current_detections.get(category, []))
+                    if not was_already_this_category:
+                        # This is a manual override
+                        all_masks[idx]['confidence'] = 1.0  # Manual selection = 100% confidence
+                        all_masks[idx]['full_label'] = f'{category} (manual)'  # Mark as manually selected
+                        all_masks[idx]['original_label'] = original_scores[idx]['original_label']
+                    else:
+                        # Keep original confidence and label
+                        all_masks[idx]['confidence'] = original_scores[idx]['confidence']
+                        all_masks[idx]['full_label'] = original_scores[idx]['full_label']
+                    
+                    print(f"    Set mask {idx} to {category} (confidence: {all_masks[idx]['confidence']:.1%})")
+        
+        # Filter masks to only include selected ones
+        filtered_masks = [m for m in all_masks if not m.get('skip_viz', False)]
+        print(f"Filtered to {len(filtered_masks)} masks for visualization")
+        
+        # Update the stored masks with manual edits
+        process_image.last_all_masks = all_masks
+        
+        # Recreate visualizations
+        all_items_img, all_items_count = create_clothing_visualization(image_rgb, filtered_masks, "all", for_gemini=True)
+        shirt_img, shirt_count = create_clothing_visualization(image_rgb, filtered_masks, "shirt", for_gemini=True)
+        pants_img, pants_count = create_clothing_visualization(image_rgb, filtered_masks, "pants", for_gemini=True)
+        shoes_img, shoes_count = create_clothing_visualization(image_rgb, filtered_masks, "shoes", for_gemini=True)
+        
+        return jsonify({
+            'all_items_img': image_to_base64(all_items_img),
+            'all_items_count': all_items_count,
+            'shirt_img': image_to_base64(shirt_img),
+            'shirt_count': shirt_count,
+            'pants_img': image_to_base64(pants_img),
+            'pants_count': pants_count,
+            'shoes_img': image_to_base64(shoes_img),
+            'shoes_count': shoes_count
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/login', methods=['POST'])
+def login():
+    """Handle user login with dummy authentication"""
+    try:
+        data = request.json
+        username = data.get('username')
+        
+        if not username:
+            return jsonify({'error': 'Username is required'}), 400
+        
+        # Dummy users list (matching the frontend)
+        dummy_users = [
+            'John Doe',
+            'Jane Smith',
+            'Test User',
+            'Fashion Designer',
+            'Demo Account'
+        ]
+        
+        # Check if user exists
+        if username not in dummy_users:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # For now, just return success with user info
+        # In a real app, you'd create a session, generate a token, etc.
+        user_info = {
+            'username': username,
+            'id': dummy_users.index(username) + 1,
+            'role': 'designer' if 'Designer' in username else 'user',
+            'created_at': datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            'success': True,
+            'user': user_info
+        })
+        
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return jsonify({'error': 'Login failed'}), 500
+
+def cleanup():
+    """Clean up models from memory on shutdown"""
+    global mask_gen, processor, model
+    print("\nCleaning up models from memory...")
+    
+    if mask_gen is not None:
+        del mask_gen
+    if processor is not None:
+        del processor
+    if model is not None:
+        del model
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
+    
+    # Clear GPU cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    
+    print("Memory cleanup complete!")
+
 if __name__ == '__main__':
+    import atexit
+    atexit.register(cleanup)  # Register cleanup on exit
     app.run(debug=True, port=5001)
