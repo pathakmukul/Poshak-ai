@@ -38,3 +38,8 @@ ENV/
 # Temporary files
 *.tmp
 *.temp
+
+# Firebase local data
+firebase-data/
+firebase-debug.log
+.firebase/

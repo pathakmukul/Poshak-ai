@@ -20,9 +20,9 @@ echo "Cleaning up existing processes on ports..."
 lsof -ti:3000,4000,4400,4500,5001,9099,9199 | xargs kill -9 2>/dev/null || true
 sleep 2
 
-# Start Firebase emulators in background
+# Start Firebase emulators in background with data persistence
 echo "Starting Firebase Emulators..."
-firebase emulators:start --only auth,storage &
+firebase emulators:start --only auth,storage --import=./firebase-data --export-on-exit &
 FIREBASE_PID=$!
 
 # Wait for Firebase to start

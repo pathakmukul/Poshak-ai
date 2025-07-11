@@ -8,14 +8,16 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 
 ## Features
 
-- **User Authentication**: Firebase-based login system with multi-user support
+- **User Authentication**: Firebase-based login system with multi-user support and dummy accounts
 - **Automatic Clothing Detection**: Uses SAM2 (Segment Anything Model 2) for precise clothing segmentation
 - **Smart Classification**: CLIP-based classification for accurate clothing categorization (shirts, pants, shoes)
-- **Digital Wardrobe**: Personal clothing collection with Firebase storage
-- **Interactive Mask Editing**: Edit and refine AI detections with visual feedback
+- **Digital Wardrobe**: Personal clothing collection with Firebase storage and detailed item view
+- **Interactive Mask Editing**: Edit and refine AI detections with visual feedback and category-focused editing
 - **Fast Processing**: Replicate API integration for cloud-based processing
 - **Local Processing**: Support for local SAM2 models (Tiny, Small, Base, Large)
 - **Mask Persistence**: Intelligent caching system for instant re-access
+- **Data Persistence**: Firebase emulator data persists across restarts
+- **Multi-item Support**: Allows multiple items per category (e.g., pair of shoes)
 
 ## Tech Stack & Pipeline
 
@@ -70,10 +72,10 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 
 1. **Image Upload** → User uploads photo locally (no Firebase until save)
 2. **Segmentation** → SAM2 generates masks for all objects in image
-3. **Classification** → CLIP classifies each mask as clothing type
-4. **Post-processing** → Best masks selected per category (shirt, pants, shoes)
-5. **Manual Refinement** → User can edit AI selections
-6. **Storage** → Final selections saved to Firebase with metadata
+3. **Classification** → CLIP classifies each mask as clothing type with original labels preserved
+4. **Post-processing** → Best masks selected per category (shirt, pants, shoes) with proper state tracking
+5. **Manual Refinement** → User can edit AI selections with category-focused interface
+6. **Storage** → Final selections saved to Firebase with metadata and visualizations
 
 ## API Endpoints
 
@@ -85,12 +87,15 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 ## Running the Application
 
 ```bash
-# Start Firebase emulator
-./start-firebase.sh
-
-# In another terminal, start the app
+# Simply run everything with one command
 ./run-all.sh
 ```
+
+This script will:
+- Clean up any existing processes on required ports
+- Start Firebase emulators with data persistence
+- Start the Flask backend
+- Start the React frontend
 
 The app runs on:
 - Frontend: http://localhost:3000
@@ -107,8 +112,13 @@ GOOGLE_API_KEY=your_gemini_key  # Optional for try-on
 
 ## Key Features Implementation
 
-- **Multi-user Support**: Each user has isolated wardrobe storage
-- **Local-first Processing**: Images processed locally until explicit save
+- **Multi-user Support**: Each user has isolated wardrobe storage with Firebase auth
+- **Local-first Processing**: Images processed locally until explicit save to Firebase
 - **Smart Caching**: Processed masks cached for instant re-access
 - **Visual Feedback**: Color-coded mask editing (blue=shirt, red=pants, orange=shoes)
 - **Batch Operations**: Multiple items can be selected per category
+- **Persistent Storage**: Firebase emulator data saved between sessions
+- **Mask Preservation**: Original AI labels preserved during manual edits
+- **Category Isolation**: Edit one clothing category at a time without affecting others
+- **Wardrobe Details**: Click any item to view segmentation breakdown with visualizations
+- **Intelligent Defaults**: Always uses Replicate API for wardrobe operations (fast mode)

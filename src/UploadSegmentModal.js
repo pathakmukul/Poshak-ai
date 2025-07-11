@@ -184,7 +184,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
         throw new Error('Failed to upload image');
       }
 
-      // Save mask data
+      // Save mask data including the visualization images
       const maskData = {
         masks: segmentResults.masks,
         classifications: {
@@ -192,11 +192,18 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
           pants: segmentResults.pants_count,
           shoes: segmentResults.shoes_count
         },
+        visualizations: {
+          shirt: segmentResults.shirt_img,
+          pants: segmentResults.pants_img,
+          shoes: segmentResults.shoes_img,
+          all: segmentResults.all_items_img
+        },
         timestamp: new Date().toISOString(),
         originalImageUrl: uploadResult.downloadURL
       };
 
-      const imageName = uploadedImage.fileName.split('.')[0];
+      // Use the fileName from uploadResult which includes the timestamp
+      const imageName = uploadResult.fileName.split('.')[0];
       await saveMaskData(user.uid, imageName, maskData);
 
       // Save mask images

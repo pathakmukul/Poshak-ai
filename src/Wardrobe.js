@@ -168,17 +168,18 @@ function Wardrobe({ user, onBack }) {
                     <div className="segment-images">
                       {/* Show mask images if available */}
                       {['shirt', 'pants', 'shoes'].map(type => {
-                        const imageName = selectedItem.name.split('.')[0];
-                        const maskUrl = `${selectedItem.url.replace(selectedItem.name, `${imageName}/mask_${type}.png`)}`;
-                        return selectedItemMasks.classifications?.[type] > 0 && (
+                        const count = selectedItemMasks.classifications?.[type] || 0;
+                        const visualization = selectedItemMasks.visualizations?.[type];
+                        
+                        if (count === 0 || !visualization) return null; // Don't show empty categories
+                        
+                        return (
                           <div key={type} className="segment-preview">
-                            <h4>{type.charAt(0).toUpperCase() + type.slice(1)}</h4>
+                            <h4>{type.charAt(0).toUpperCase() + type.slice(1)} ({count})</h4>
                             <img 
-                              src={maskUrl} 
+                              src={`data:image/png;base64,${visualization}`}
                               alt={`${type} mask`}
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                              }}
+                              style={{ backgroundColor: '#f8f8f8' }}
                             />
                           </div>
                         );
