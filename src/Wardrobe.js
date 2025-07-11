@@ -10,11 +10,32 @@ function Wardrobe({ user, onBack }) {
   const [selectedItemMasks, setSelectedItemMasks] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMasks, setLoadingMasks] = useState(false);
+  const [showTryOnModal, setShowTryOnModal] = useState(false);
+  const [tryOnProcessing, setTryOnProcessing] = useState(false);
+  const [tryOnResult, setTryOnResult] = useState(null);
+  const [selectedGarment, setSelectedGarment] = useState('');
+  const [garments, setGarments] = useState([]);
+  const [selectedClothingType, setSelectedClothingType] = useState('shirt');
 
   // Load user's wardrobe items
   useEffect(() => {
     loadWardrobeItems();
   }, [user]);
+
+  // Load available garments when component mounts
+  useEffect(() => {
+    fetch('http://localhost:5001/garments')
+      .then(res => res.json())
+      .then(data => {
+        if (data.garments) {
+          setGarments(data.garments);
+          if (data.garments.length > 0) {
+            setSelectedGarment(data.garments[0]);
+          }
+        }
+      })
+      .catch(err => console.error('Error loading garments:', err));
+  }, []);
 
   const loadWardrobeItems = async () => {
     setLoading(true);
@@ -43,6 +64,64 @@ function Wardrobe({ user, onBack }) {
       } else {
         alert('Failed to delete item');
       }
+    }
+  };
+
+  const performGeminiTryOn = async () => {
+    if (!selectedItem || !selectedGarment || !selectedItemMasks) {
+      alert('Please select an item with mask data and a garment');
+      return;
+    }
+
+    setTryOnProcessing(true);
+    setTryOnResult(null);
+
+    try {
+      // Use the new endpoint that works with stored masks - no reprocessing!
+      const geminiDataResponse = await fetch('http://localhost:5001/prepare-wardrobe-gemini', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_url: selectedItem.url,  // Firebase Storage URL
+          mask_data: selectedItemMasks,  // Already loaded mask data
+          clothing_type: selectedClothingType
+        }),
+      });
+
+      const geminiData = await geminiDataResponse.json();
+      
+      if (!geminiData.success) {
+        throw new Error(geminiData.error || 'Failed to prepare image data');
+      }
+
+      // Perform the try-on
+      const tryOnResponse = await fetch('http://localhost:5001/gemini-tryon', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          person_image: `data:image/png;base64,${geminiData.original_image}`,
+          mask_image: `data:image/png;base64,${geminiData.mask_image}`,
+          garment_file: selectedGarment,
+          clothing_type: selectedClothingType
+        }),
+      });
+
+      const tryOnData = await tryOnResponse.json();
+      
+      if (tryOnData.success) {
+        setTryOnResult(tryOnData.result_image);
+        setShowTryOnModal(true);
+      } else {
+        alert(`Error: ${tryOnData.error}`);
+      }
+    } catch (error) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setTryOnProcessing(false);
     }
   };
 
@@ -193,10 +272,128 @@ function Wardrobe({ user, onBack }) {
             </div>
             
             <div className="item-actions">
-              <button className="try-on-button">
+              <button 
+                className="try-on-button"
+                onClick={() => {
+                  if (selectedItemMasks) {
+                    setShowTryOnModal(true);
+                  } else {
+                    alert('Please wait for mask data to load');
+                  }
+                }}
+                disabled={!selectedItemMasks || loadingMasks}
+              >
                 ✨ Virtual Try-On
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Virtual Try-On Modal */}
+      {showTryOnModal && selectedItem && (
+        <div className="item-detail-modal" onClick={() => {
+          setShowTryOnModal(false);
+          setTryOnResult(null);
+        }}>
+          <div className="modal-content expanded" onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="close-button"
+              onClick={() => {
+                setShowTryOnModal(false);
+                setTryOnResult(null);
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2>🎨 Virtual Try-On</h2>
+            
+            {!tryOnResult && (
+              <div className="try-on-controls">
+                <div className="control-group">
+                  <label>Clothing Type:</label>
+                  <select
+                    value={selectedClothingType}
+                    onChange={(e) => setSelectedClothingType(e.target.value)}
+                    disabled={tryOnProcessing}
+                  >
+                    <option value="shirt">Shirt</option>
+                    <option value="pants">Pants</option>
+                    <option value="shoes">Shoes</option>
+                  </select>
+                </div>
+                
+                <div className="control-group">
+                  <label>Select Garment:</label>
+                  <select
+                    value={selectedGarment}
+                    onChange={(e) => setSelectedGarment(e.target.value)}
+                    disabled={tryOnProcessing}
+                  >
+                    <option value="">-- Select a garment --</option>
+                    {garments.map(garment => (
+                      <option key={garment} value={garment}>
+                        {garment}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  className="try-on-button"
+                  onClick={performGeminiTryOn}
+                  disabled={tryOnProcessing || !selectedGarment}
+                  style={{ marginTop: '20px' }}
+                >
+                  {tryOnProcessing ? 'Processing...' : '✨ Generate Try-On'}
+                </button>
+              </div>
+            )}
+            
+            {tryOnResult && (
+              <div className="try-on-results">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '20px' }}>
+                  <div>
+                    <h4>Original</h4>
+                    <img 
+                      src={selectedItem.url} 
+                      alt="Original" 
+                      style={{ width: '100%', borderRadius: '8px' }}
+                    />
+                  </div>
+                  <div>
+                    <h4>Garment</h4>
+                    {selectedGarment && (
+                      <img 
+                        src={`http://localhost:5001/static/garments/${selectedGarment}`} 
+                        alt="Garment" 
+                        style={{ width: '100%', borderRadius: '8px', backgroundColor: '#f8f8f8' }}
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <h4>Try-On Result</h4>
+                    <img 
+                      src={`data:image/png;base64,${tryOnResult}`} 
+                      alt="Try-on result" 
+                      style={{ width: '100%', borderRadius: '8px' }}
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  className="try-on-button"
+                  onClick={() => {
+                    setTryOnResult(null);
+                    setSelectedClothingType('shirt');
+                  }}
+                  style={{ marginTop: '20px' }}
+                >
+                  Try Another Garment
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

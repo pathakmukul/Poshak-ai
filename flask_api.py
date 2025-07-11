@@ -1757,11 +1757,17 @@ def get_gemini_data():
         if not hasattr(process_image, 'last_masks') or not process_image.last_masks:
             return jsonify({'error': 'No masks available. Generate masks first.'}), 400
         
-        # Load original image
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        full_image_path = os.path.join(base_dir, image_path)
-        image = cv2.imread(full_image_path)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Use stored image if available, otherwise load from path
+        if hasattr(process_image, 'last_image_rgb') and process_image.last_image_rgb is not None:
+            image_rgb = process_image.last_image_rgb
+        elif image_path:
+            # Load original image from path
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            full_image_path = os.path.join(base_dir, image_path)
+            image = cv2.imread(full_image_path)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            return jsonify({'error': 'No image available. Process an image first.'}), 400
         
         # Filter for specific clothing type
         if clothing_type == "shirt":
@@ -1802,6 +1808,84 @@ def get_gemini_data():
             })
         else:
             return jsonify({'error': f'No {clothing_type} mask found'}), 400
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/prepare-wardrobe-gemini', methods=['POST'])
+def prepare_wardrobe_gemini():
+    """Prepare wardrobe item for Gemini try-on using stored masks"""
+    try:
+        data = request.json
+        image_url = data.get('image_url')  # Firebase Storage URL
+        mask_data = data.get('mask_data')  # The stored mask data from Firebase
+        clothing_type = data.get('clothing_type')
+        
+        if not image_url or not mask_data:
+            return jsonify({'error': 'Missing image_url or mask_data'}), 400
+            
+        # Download image from Firebase
+        print(f"Downloading wardrobe image from: {image_url}")
+        response = requests.get(image_url)
+        response.raise_for_status()
+        
+        # Convert to numpy array
+        nparr = np.frombuffer(response.content, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            return jsonify({'error': 'Failed to decode image from URL'}), 500
+            
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        # Get the visualization for the selected clothing type
+        visualizations = mask_data.get('visualizations', {})
+        mask_base64 = visualizations.get(clothing_type)
+        
+        if not mask_base64:
+            return jsonify({'error': f'No {clothing_type} mask found in stored data'}), 400
+            
+        # The stored visualization is already a mask image, but we need to convert it to RGBA format
+        # Decode the stored mask visualization
+        mask_img_data = base64.b64decode(mask_base64)
+        mask_pil = Image.open(BytesIO(mask_img_data))
+        mask_np = np.array(mask_pil)
+        
+        # Extract the mask from the visualization
+        # The visualization has colored regions for clothing items
+        # We need to create a binary mask where clothing pixels are True
+        if len(mask_np.shape) == 3:
+            # Convert to grayscale if needed
+            mask_gray = cv2.cvtColor(mask_np, cv2.COLOR_RGB2GRAY)
+        else:
+            mask_gray = mask_np
+            
+        # Create binary mask where non-zero pixels are clothing
+        binary_mask = mask_gray > 0
+        
+        # Convert to RGBA format for Gemini (transparent where clothing is)
+        mask_rgba = np.zeros((binary_mask.shape[0], binary_mask.shape[1], 4), dtype=np.uint8)
+        mask_rgba[:, :, 3] = (~binary_mask * 255).astype(np.uint8)  # Inverted for transparency
+        mask_pil_rgba = Image.fromarray(mask_rgba, mode='RGBA')
+        
+        # Convert to base64
+        buffer = BytesIO()
+        mask_pil_rgba.save(buffer, format="PNG")
+        mask_base64_rgba = base64.b64encode(buffer.getvalue()).decode()
+        
+        # Convert original image to base64
+        original_pil = Image.fromarray(image_rgb)
+        buffer2 = BytesIO()
+        original_pil.save(buffer2, format="PNG")
+        original_base64 = base64.b64encode(buffer2.getvalue()).decode()
+        
+        return jsonify({
+            'success': True,
+            'original_image': original_base64,
+            'mask_image': mask_base64_rgba
+        })
         
     except Exception as e:
         import traceback
