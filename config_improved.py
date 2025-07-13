@@ -1,104 +1,38 @@
 """
-Improved configuration using Facebook's SAM2 parameters
-Based on analysis of FB's automatic_mask_generator_example.ipynb
+Improved configuration for SAM2 - optimized for clothing segmentation
 """
 
-# SAM2 Configuration - Using Facebook's proven parameters
+# SAM2 Configuration - Enhanced for better clothing detection
 SAM2_CONFIG = {
-    # STANDARD MODE - Facebook's default settings
-    "standard": {
-        "points_per_side": 32,  # FB default: 32x32 = 1024 points
-        "points_per_batch": 64,  # FB default
-        "pred_iou_thresh": 0.88,  # FB default
-        "stability_score_thresh": 0.95,  # FB default
-        "stability_score_offset": 1.0,  # FB default (we were missing this!)
-        "box_nms_thresh": 0.7,  # FB default (critical for deduplication!)
-        "crop_n_layers": 0,  # FB default
-        "crop_n_points_downscale_factor": 1,  # FB default
-        "min_mask_region_area": 0,  # FB default (no filtering)
-        "use_m2m": False,  # FB default (can enable for better quality)
-    },
-    
-    # HIGH QUALITY MODE - Facebook's dense configuration
-    "high_quality": {
-        "points_per_side": 64,  # FB dense: 64x64 = 4096 points!
-        "points_per_batch": 128,  # More parallel processing
-        "pred_iou_thresh": 0.7,  # Lower threshold for more masks
-        "stability_score_thresh": 0.92,  # Slightly lower
-        "stability_score_offset": 0.7,  # More aggressive offset
-        "box_nms_thresh": 0.7,  # Keep deduplication
-        "crop_n_layers": 1,  # Multi-scale for small objects
-        "crop_n_points_downscale_factor": 2,  # FB dense setting
-        "min_mask_region_area": 25.0,  # Small cleanup threshold
-        "use_m2m": True,  # Enable mask-to-mask refinement
-    },
-    
-    # FAST MODE - Balanced for speed
-    "fast": {
-        "points_per_side": 24,  # 24x24 = 576 points
-        "points_per_batch": 64,
-        "pred_iou_thresh": 0.85,  # Slightly lower than FB
-        "stability_score_thresh": 0.93,
-        "stability_score_offset": 1.0,
-        "box_nms_thresh": 0.7,
-        "crop_n_layers": 0,
-        "crop_n_points_downscale_factor": 1,
-        "min_mask_region_area": 50,  # Filter tiny fragments
-        "use_m2m": False,
-    },
-    
-    # CLOTHING OPTIMIZED - Best for fashion items
-    "clothing": {
-        "points_per_side": 40,  # 1600 points - good coverage
-        "points_per_batch": 128,
-        "pred_iou_thresh": 0.80,  # Lower to catch more clothing
-        "stability_score_thresh": 0.90,  # More permissive
-        "stability_score_offset": 0.8,
-        "box_nms_thresh": 0.65,  # Slightly lower for overlapping clothes
-        "crop_n_layers": 1,  # Important for shoes!
-        "crop_n_points_downscale_factor": 2,
-        "min_mask_region_area": 100,  # Small enough for accessories
-        "use_m2m": True,  # Better boundaries
-    }
+    "points_per_side": 48,  # 2304 points for better coverage
+    "points_per_batch": 128,  # Process more points at once
+    "pred_iou_thresh": 0.75,  # Lower threshold to catch more segments
+    "stability_score_thresh": 0.88,  # More permissive for clothing
+    "stability_score_offset": 0.7,  # Lower offset for more mask variations
+    "mask_threshold": -0.5,  # Negative for softer boundaries
+    "box_nms_thresh": 0.5,  # Lower NMS to keep overlapping clothing items
+    "crop_n_layers": 1,  # Multi-scale helps with shoes and accessories
+    "crop_nms_thresh": 0.7,  # Standard crop NMS
+    "crop_overlap_ratio": 0.4,  # More overlap for better boundaries
+    "crop_n_points_downscale_factor": 2,
+    "min_mask_region_area": 100,  # Filter out noise but keep small items
+    "multimask_output": True,  # Get 3 masks per point
+    "use_m2m": True,  # Mask-to-mask refinement for cleaner boundaries
 }
-
-# Model-specific overrides
-MODEL_OVERRIDES = {
-    "tiny": {
-        # Tiny model needs more aggressive settings
-        "pred_iou_thresh": 0.75,
-        "stability_score_thresh": 0.88,
-    },
-    "small": {
-        # Small model with balanced settings
-        "pred_iou_thresh": 0.80,
-    },
-    "base": {
-        # Base model can use standard settings
-    },
-    "large": {
-        # Large model can be more selective
-        "pred_iou_thresh": 0.85,
-        "points_per_side": 48,  # Can handle more points
-    }
-}
-
-# Active configuration selection
-ACTIVE_CONFIG = "standard"  # Options: "standard", "high_quality", "fast", "clothing"
 
 # Get the active configuration
 def get_active_sam2_config():
-    """Returns the currently active SAM2 configuration"""
-    return SAM2_CONFIG.get(ACTIVE_CONFIG, SAM2_CONFIG["standard"])
+    """Returns the SAM2 configuration"""
+    return SAM2_CONFIG
 
-# SigLIP Classification Configuration (unchanged)
+# SigLIP Classification Configuration
 SIGLIP_CONFIG = {
     "use_context": True,
     "context_padding": 20,
     "context_dim_factor": 0.3,
 }
 
-# Classification thresholds (unchanged)
+# Classification thresholds
 CLASSIFICATION_CONFIG = {
     "shirt_max_y": 0.6,
     "pants_min_y": 0.4,
@@ -114,10 +48,8 @@ PERFORMANCE_CONFIG = {
     "max_image_size": 1024,
     "skip_very_large_masks": True,
     "batch_classification": False,
-    
-    # New options
-    "adaptive_quality": True,  # Automatically adjust based on initial results
-    "max_retry_attempts": 2,  # Retry with higher quality if poor results
+    "adaptive_quality": True,
+    "max_retry_attempts": 2,
 }
 
 # Debug options
@@ -125,8 +57,8 @@ DEBUG_CONFIG = {
     "save_intermediate_images": False,
     "print_all_scores": False,
     "timing_details": True,
-    "print_mask_stats": True,  # Show mask count and quality metrics
-    "use_improved_siglip": False,  # Use improved SigLIP classification with templates
-    "use_fashion_siglip": False,  # Use optimized SigLIP with better prompts
-    "use_clip_instead": True,  # Use CLIP instead of SigLIP (experimental)
+    "print_mask_stats": True,
+    "use_improved_siglip": False,
+    "use_fashion_siglip": False,
+    "use_clip_instead": True,
 }

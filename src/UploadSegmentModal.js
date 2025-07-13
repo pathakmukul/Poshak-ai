@@ -198,6 +198,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
           shoes: segmentResults.shoes_img,
           all: segmentResults.all_items_img
         },
+        closet_visualizations: segmentResults.closet_visualizations || {},
         timestamp: new Date().toISOString(),
         originalImageUrl: uploadResult.downloadURL
       };
