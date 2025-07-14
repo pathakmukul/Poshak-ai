@@ -1,0 +1,29 @@
+steps:
+  # Pull the previous image for caching
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker pull gcr.io/$PROJECT_ID/kapdaai-backend:latest || exit 0
+
+  # Build with cache from previous image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/kapdaai-backend:latest'
+      - '--cache-from'
+      - 'gcr.io/$PROJECT_ID/kapdaai-backend:latest'
+      - '.'
+
+  # Push the new image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/kapdaai-backend:latest']
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  substitution_option: 'ALLOW_LOOSE'
+
+images:
+  - 'gcr.io/$PROJECT_ID/kapdaai-backend:latest'

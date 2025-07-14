@@ -39,18 +39,20 @@ from transformers import AutoProcessor, AutoModel
 import time
 
 # Import configuration
-from config_improved import get_active_sam2_config, SIGLIP_CONFIG, CLASSIFICATION_CONFIG, PERFORMANCE_CONFIG, DEBUG_CONFIG
-from improved_siglip_classification import classify_with_improved_prompts, classify_with_position_hints
-from fashion_siglip_classifier import classify_with_fashion_siglip, FashionSigLIPClassifier
+from config_improved import get_active_sam2_config, CLASSIFICATION_CONFIG, PERFORMANCE_CONFIG, DEBUG_CONFIG, PERSON_EXTRACTION_CONFIG
+# Removed SigLIP imports - using CLIP only
 from clip_classifier import classify_with_clip
 
 # Import Gemini service
 from services.gemini_service import GeminiService
 
+# Import person extractor
+from services.person_extractor import extract_person_from_image
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Global models for classification (keeping SigLIP/CLIP)
+# Global models for CLIP classification
 processor = None
 model = None
 
@@ -60,19 +62,13 @@ gemini_service = GeminiService()
 # No Firebase Admin needed - client handles Firebase
 
 def load_classification_models():
-    """Load SigLIP models for classification only"""
+    """Load classification models - delegates to clip_classifier module"""
     global processor, model
     
     if processor is None or model is None:
-        print("Loading SigLIP for classification...")
-        processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224", use_fast=True)
-        model = AutoModel.from_pretrained("google/siglip-base-patch16-224")
-        model.eval()
-        
-        # Move SigLIP to MPS for GPU acceleration
-        if torch.backends.mps.is_available():
-            model = model.to("mps")
-            print("SigLIP moved to MPS for GPU acceleration")
+        # Load from clip_classifier module to keep flask_api.py clean
+        from clip_classifier import load_clip_model
+        processor, model = load_clip_model()
 
 def image_to_base64(image):
     """Convert numpy array to base64 string"""
@@ -94,6 +90,11 @@ def process_with_replicate(image_path):
     if not os.environ.get('REPLICATE_API_TOKEN'):
         raise Exception("REPLICATE_API_TOKEN environment variable not set. Get your token from https://replicate.com/account/api-tokens")
     
+    # Log the image being processed
+    img = cv2.imread(image_path)
+    print(f"🎯 SAM2 processing image from: {image_path}")
+    print(f"🎯 Image dimensions: {img.shape if img is not None else 'Unknown'}")
+    
     # Convert image to base64 for upload
     img_data = file_to_base64(image_path)
     img_uri = f"data:image/png;base64,{img_data}"
@@ -114,6 +115,7 @@ def process_with_replicate(image_path):
         
         # Run SAM-2 on Replicate with our config
         start_time = time.time()
+        print("🚀 Sending request to Replicate SAM2...")
         output = replicate.run(
             "meta/sam-2:fe97b453a6455861e3bac769b441ca1f1086110da7466dbb65cf1eecfd60dc83",
             input={
@@ -135,7 +137,7 @@ def process_with_replicate(image_path):
             }
         )
         sam2_time = time.time() - start_time
-        print(f"Replicate SAM2 completed in {sam2_time:.2f} seconds")
+        print(f"⏱️  Replicate SAM2 API completed in: {sam2_time:.2f} seconds")
         
         # Process the output masks
         masks = []
@@ -417,10 +419,16 @@ def save_mask_images(image_path, image_rgb, masks):
     """Save mask images as PNG files for each clothing type in organized folders"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        # Check if data directory exists in current dir, otherwise check parent
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        else:
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        
         base_name = os.path.basename(image_path).split('.')[0]
         
         # Create dedicated folder for this image's masks
-        masks_dir = os.path.join(base_dir, 'data', 'saved_masks', base_name)
+        masks_dir = os.path.join(data_dir, 'saved_masks', base_name)
         os.makedirs(masks_dir, exist_ok=True)
         
         # Save masks for each clothing type
@@ -464,10 +472,18 @@ def load_masks_from_file(image_path):
     """Load masks from the new organized folder structure"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        # Check if data directory exists in current dir, otherwise check parent
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        elif os.path.exists(os.path.join(os.path.dirname(base_dir), 'data')):
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        else:
+            return None, None  # No data directory found
+        
         base_name = os.path.basename(image_path).split('.')[0]
         
         # Look in the dedicated folder for this image
-        masks_dir = os.path.join(base_dir, 'data', 'saved_masks', base_name)
+        masks_dir = os.path.join(data_dir, 'saved_masks', base_name)
         masks_file = os.path.join(masks_dir, "masks.pkl")
         
         if os.path.exists(masks_file):
@@ -496,8 +512,19 @@ def serve_person_image(filename):
     try:
         print(f"Serving person image: {filename}")
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        image_dir = os.path.join(base_dir, 'data', 'sample_images', 'people')
+        # Check if data directory exists in current dir, otherwise check parent
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        elif os.path.exists(os.path.join(os.path.dirname(base_dir), 'data')):
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        else:
+            return jsonify({"error": "Data directory not found"}), 404
+            
+        image_dir = os.path.join(data_dir, 'sample_images', 'people')
         
+        if not os.path.exists(image_dir):
+            return jsonify({"error": "People images directory not found"}), 404
+            
         if not os.path.exists(os.path.join(image_dir, filename)):
             return jsonify({"error": f"Image {filename} not found"}), 404
             
@@ -513,8 +540,19 @@ def serve_garment_image(filename):
     try:
         print(f"Serving garment image: {filename}")
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        image_dir = os.path.join(base_dir, 'data', 'sample_images', 'garments')
+        # Check if data directory exists in current dir, otherwise check parent
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        elif os.path.exists(os.path.join(os.path.dirname(base_dir), 'data')):
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        else:
+            return jsonify({"error": "Data directory not found"}), 404
+            
+        image_dir = os.path.join(data_dir, 'sample_images', 'garments')
         
+        if not os.path.exists(image_dir):
+            return jsonify({"error": "Garments directory not found"}), 404
+            
         if not os.path.exists(os.path.join(image_dir, filename)):
             return jsonify({"error": f"Garment {filename} not found"}), 404
             
@@ -606,6 +644,72 @@ def process_image():
                 return jsonify({'error': f'Failed to read image: {full_image_path}'}), 500
                 
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        original_image_rgb = image_rgb.copy()  # Keep original for mask adjustment
+        
+        # Apply person extraction if enabled
+        person_bbox = None
+        person_extraction_viz = None
+        if PERSON_EXTRACTION_CONFIG.get('use_person_extraction', True):
+            print("Extracting person from image using MediaPipe...")
+            mediapipe_start = time.time()
+            try:
+                cropped_person, person_bbox, person_mask = extract_person_from_image(
+                    image_rgb, 
+                    padding_percent=PERSON_EXTRACTION_CONFIG.get('padding_percent', 10)
+                )
+                
+                if cropped_person is not None:
+                    mediapipe_time = time.time() - mediapipe_start
+                    print(f"⏱️  MediaPipe extraction completed in: {mediapipe_time:.2f} seconds")
+                    print(f"Person detected! Bbox: {person_bbox}")
+                    
+                    # Create visualization of person extraction
+                    viz_img = original_image_rgb.copy()
+                    # Draw bounding box
+                    x, y, w, h = person_bbox
+                    cv2.rectangle(viz_img, (x, y), (x+w, y+h), (0, 255, 0), 3)
+                    
+                    # Apply mask overlay
+                    if person_mask is not None:
+                        mask_overlay = np.zeros_like(viz_img)
+                        mask_overlay[person_mask > 0] = [0, 255, 0]  # Green overlay
+                        viz_img = cv2.addWeighted(viz_img, 0.7, mask_overlay, 0.3, 0)
+                    
+                    # Add text
+                    cv2.putText(viz_img, "MediaPipe Person Detection", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    cv2.putText(viz_img, f"Bbox: {person_bbox}", (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    
+                    person_extraction_viz = image_to_base64(viz_img)
+                    
+                    # Save cropped person for SAM2 processing
+                    temp_person_path = os.path.join(base_dir, 'temp_person_cropped.jpg')
+                    cv2.imwrite(temp_person_path, cv2.cvtColor(cropped_person, cv2.COLOR_RGB2BGR))
+                    # Update paths and image for SAM2
+                    full_image_path = temp_person_path
+                    image_rgb = cropped_person
+                    print(f"✅ MediaPipe detected person! Processing cropped region: {cropped_person.shape}")
+                    print(f"✅ Cropped person saved to: {temp_person_path}")
+                    print(f"✅ SAM2 will process ONLY the person region, not the full image")
+                else:
+                    mediapipe_time = time.time() - mediapipe_start
+                    print(f"⏱️  MediaPipe extraction completed in: {mediapipe_time:.2f} seconds")
+                    print("No person detected, processing full image")
+                    # Create visualization showing no detection
+                    viz_img = original_image_rgb.copy()
+                    cv2.putText(viz_img, "MediaPipe: No Person Detected", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                    person_extraction_viz = image_to_base64(viz_img)
+            except Exception as e:
+                print(f"Person extraction failed: {str(e)}, processing full image")
+                import traceback
+                traceback.print_exc()
+                # Create error visualization
+                viz_img = original_image_rgb.copy()
+                cv2.putText(viz_img, f"MediaPipe Error: {str(e)[:50]}", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                person_extraction_viz = image_to_base64(viz_img)
         
         # Always use Replicate API for SAM2
         try:
@@ -621,6 +725,46 @@ def process_image():
         except Exception as e:
             print(f"Replicate API error: {str(e)}")
             return jsonify({'error': f'Replicate API failed: {str(e)}'}), 500
+        
+        # Adjust mask coordinates back to original image space if person was extracted
+        if person_bbox is not None:
+            print(f"Adjusting {len(masks)} masks back to original image coordinates...")
+            x_offset, y_offset = person_bbox[0], person_bbox[1]
+            
+            for mask in masks:
+                # Create a new full-size mask
+                h_orig, w_orig = original_image_rgb.shape[:2]
+                full_mask = np.zeros((h_orig, w_orig), dtype=bool)
+                
+                # Get the cropped mask dimensions
+                h_crop, w_crop = mask['segmentation'].shape
+                
+                # Calculate the region where to place the mask
+                y_start = y_offset
+                y_end = min(y_offset + h_crop, h_orig)
+                x_start = x_offset
+                x_end = min(x_offset + w_crop, w_orig)
+                
+                # Place the cropped mask in the full image space
+                full_mask[y_start:y_end, x_start:x_end] = mask['segmentation'][:y_end-y_start, :x_end-x_start]
+                
+                # Update mask data
+                mask['segmentation'] = full_mask
+                
+                # Adjust bbox coordinates
+                old_bbox = mask['bbox']
+                mask['bbox'] = [
+                    old_bbox[0] + x_offset,
+                    old_bbox[1] + y_offset,
+                    old_bbox[2] + x_offset,
+                    old_bbox[3] + y_offset
+                ]
+                
+                # Recalculate area
+                mask['area'] = int(full_mask.sum())
+            
+            # Use original image for visualization
+            image_rgb = original_image_rgb
         
         # Sort by area
         masks = sorted(masks, key=lambda x: x['area'], reverse=True)
@@ -751,15 +895,15 @@ def process_image():
         non_clothing = ["person", "face", "hair", "hand", "arm", "leg"]
         clothing_labels = [l for l in all_labels if l not in non_clothing]
         
-        # Load CLIP/SigLIP for classification if not already loaded
+        # Load CLIP for classification if not already loaded
         if processor is None or model is None:
             load_classification_models()
         
         # Classify each mask
-        classification_model = "CLIP" if DEBUG_CONFIG.get("use_clip_instead", False) else "SigLIP"
+        classification_model = "CLIP"  # Always using CLIP now
         print(f"Classifying {len(masks)} masks with {classification_model}...")
         print(f"Using labels: {all_labels[:10]}... (showing first 10 of {len(all_labels)})")
-        start_siglip = time.time()
+        start_classification = time.time()
         clothing_detections = {"shirt": 0, "pants": 0, "shoes": 0}
         
         for i, mask_dict in enumerate(masks):
@@ -831,99 +975,33 @@ def process_image():
             # Convert to PIL - use RGB mode for classification models
             pil_img = Image.fromarray(masked_rgba[:, :, :3])  # Convert RGBA to RGB for models
             
-            # Choose classification method based on config
-            USE_CLIP = DEBUG_CONFIG.get("use_clip_instead", False)
-            USE_FASHION_SIGLIP = DEBUG_CONFIG.get("use_fashion_siglip", True)
+            # Always use CLIP for classification
+            classification_result = classify_with_clip(
+                pil_img, processor, model, position_y=center_y, area_ratio=area_ratio
+            )
             
-            if USE_CLIP:
-                # Use CLIP for classification
-                classification_result = classify_with_clip(
-                    pil_img, processor, model, position_y=center_y, area_ratio=area_ratio
-                )
-                
-                detected_label = classification_result['label']
-                mask_dict['full_label'] = detected_label
-                mask_dict['confidence'] = classification_result['confidence']
-                all_scores = classification_result.get('all_scores', {})
-                
-                # For debug
-                descriptive_hints = list(all_scores.keys())
-                
-                # Store debug info for CLIP
-                mask_dict['debug_info'] = {
-                    'prompts': descriptive_hints,
-                    'all_scores': all_scores,
-                    'position_y': center_y,
-                    'mask_area': mask_dict['area'],
-                    'aspect_ratio': aspect_ratio,
-                    'model': 'CLIP'
-                }
-                
-            elif USE_FASHION_SIGLIP:
-                # Use Fashion SigLIP (best for clothing)
-                classification_result = classify_with_fashion_siglip(
-                    pil_img, processor, model, position_y=center_y, area_ratio=area_ratio
-                )
-                
-                detected_label = classification_result['label']
-                mask_dict['full_label'] = detected_label
-                mask_dict['confidence'] = classification_result['confidence']
-                all_scores = classification_result['all_scores']
-                
-                # Store multi-label results if available
-                if 'multi_labels' in classification_result:
-                    mask_dict['multi_labels'] = classification_result['multi_labels']
-                
-                # For debug
-                descriptive_hints = list(all_scores.keys())
-                
-            elif DEBUG_CONFIG.get("use_improved_siglip", False):
-                # Use improved classification with position hints
-                classification_result = classify_with_position_hints(
-                    pil_img, processor, model, mask_dict['area'], center_y, aspect_ratio
-                )
-                
-                detected_label = classification_result['label']
-                mask_dict['full_label'] = classification_result['raw_prompt']
-                mask_dict['confidence'] = classification_result['confidence']
-                all_scores = classification_result['all_scores']
-                
-                # For consistency with old code
-                descriptive_hints = list(all_scores.keys())
-                
-            else:
-                # Old classification method (backup)
-                inputs = processor(text=descriptive_hints, images=pil_img, return_tensors="pt", padding=True)
-                
-                # Move inputs to MPS if available for GPU acceleration
-                if torch.backends.mps.is_available():
-                    inputs = {k: v.to("mps") if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
-                
-                with torch.no_grad():
-                    outputs = model(**inputs)
-                    logits = outputs.logits_per_image[0]
-                    probs = torch.softmax(logits, dim=0)
-                
-                best_idx = probs.argmax().item()
-                mask_dict['full_label'] = descriptive_hints[best_idx]  # Keep full label for debug
-                mask_dict['confidence'] = probs[best_idx].item()
-                detected_label = descriptive_hints[best_idx]
-                
-                # Store all scores for old method
-                all_scores = {label: probs[i].item() for i, label in enumerate(descriptive_hints)}
+            detected_label = classification_result['label']
+            mask_dict['full_label'] = detected_label
+            mask_dict['confidence'] = classification_result['confidence']
+            all_scores = classification_result.get('all_scores', {})
             
+            # For debug
+            descriptive_hints = list(all_scores.keys())
+            
+            # Store debug info for CLIP
             mask_dict['debug_info'] = {
                 'prompts': descriptive_hints,
                 'all_scores': all_scores,
                 'position_y': center_y,
                 'mask_area': mask_dict['area'],
-                'aspect_ratio': aspect_ratio
+                'aspect_ratio': aspect_ratio,
+                'model': 'CLIP'
             }
             
             # Add mask ID for tracking
             mask_dict['mask_id'] = i
             
-            # Just use what SigLIP says, no corrections based on position
+            # Just use what CLIP says, no corrections based on position
             print(f"    Mask {i}: detected as '{detected_label}' ({mask_dict['confidence']:.1%}), y_pos={center_y:.2f}")
             
             # Store the original detected label
@@ -955,7 +1033,8 @@ def process_image():
             if 'debug_info' in mask_dict:
                 mask_dict['debug_info']['input_image'] = image_to_base64(np.array(pil_img))
         
-        siglip_time = time.time() - start_siglip
+        classification_time = time.time() - start_classification
+        print(f"⏱️  CLIP classification completed in: {classification_time:.2f} seconds")
         
         # Post-process to keep only best masks for each category
         print("\nPost-processing: Keeping best masks for each clothing type...")
@@ -1061,7 +1140,7 @@ def process_image():
             'shoes': len([m for m in masks if m.get('label') == 'shoes'])
         }
         
-        total_time = sam2_time + siglip_time
+        total_time = sam2_time + classification_time
         
         print(f"\nFinal Detection Summary:")
         print(f"  Shirts: {clothing_detections['shirt']}")
@@ -1099,7 +1178,7 @@ def process_image():
         print(f"\n=== Timing Breakdown ===")
         print(f"Replicate API used for SAM2")
         print(f"SAM2 inference: {sam2_time:.2f}s")
-        print(f"{classification_model} classification: {siglip_time:.2f}s")
+        print(f"{classification_model} classification: {classification_time:.2f}s")
         print(f"Total processing: {total_time:.2f}s")
         print(f"=======================\n")
         
@@ -1163,12 +1242,13 @@ def process_image():
         # Return results
         return jsonify({
             'sam2_time': sam2_time,
-            'siglip_time': siglip_time,
+            'classification_time': classification_time,
             'total_time': total_time,
             **visualizations,  # Spread the visualization results
             'raw_sam2_img': image_to_base64(raw_sam2_img),
             'raw_masks_count': len(raw_masks_for_viz),
-            'masks': masks_with_crops  # Include for editor
+            'masks': masks_with_crops,  # Include for editor
+            'person_extraction_viz': person_extraction_viz  # MediaPipe visualization
         })
     
     except Exception as e:
@@ -1182,10 +1262,18 @@ def quick_load_masks(filename):
     """Quick load pre-generated masks for an image"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        # Check if data directory exists
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        elif os.path.exists(os.path.join(os.path.dirname(base_dir), 'data')):
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        else:
+            return jsonify({'success': False, 'has_masks': False})
+            
         base_name = filename.split('.')[0]
         
         # Look in the dedicated folder for this image
-        masks_dir = os.path.join(base_dir, 'data', 'saved_masks', base_name)
+        masks_dir = os.path.join(data_dir, 'saved_masks', base_name)
         
         # Check if the folder exists
         if not os.path.exists(masks_dir):
@@ -1275,7 +1363,7 @@ def load_saved_masks():
         # Return results
         return jsonify({
             'sam2_time': 0,  # No processing time for loaded masks
-            'siglip_time': 0,
+            'classification_time': 0,
             'total_time': 0,
             'loaded_from_cache': True,
             'cache_timestamp': timestamp,
@@ -1292,7 +1380,15 @@ def get_garments():
     """Get list of available garment images"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        garments_dir = os.path.join(base_dir, 'data', 'sample_images', 'garments')
+        # Check if data directory exists
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        elif os.path.exists(os.path.join(os.path.dirname(base_dir), 'data')):
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        else:
+            return jsonify({'garments': []})
+            
+        garments_dir = os.path.join(data_dir, 'sample_images', 'garments')
         
         garments = []
         if os.path.exists(garments_dir):
@@ -1438,7 +1534,15 @@ def get_people():
     """Get list of available person images"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        people_dir = os.path.join(base_dir, 'data', 'sample_images', 'people')
+        # Check if data directory exists
+        if os.path.exists(os.path.join(base_dir, 'data')):
+            data_dir = os.path.join(base_dir, 'data')
+        elif os.path.exists(os.path.join(os.path.dirname(base_dir), 'data')):
+            data_dir = os.path.join(os.path.dirname(base_dir), 'data')
+        else:
+            return jsonify({'people': []})
+            
+        people_dir = os.path.join(data_dir, 'sample_images', 'people')
         
         people = []
         if os.path.exists(people_dir):
@@ -1639,5 +1743,16 @@ def cleanup():
 
 if __name__ == '__main__':
     import atexit
+    import os
     atexit.register(cleanup)  # Register cleanup on exit
-    app.run(debug=True, port=5001)
+    
+    # Get port from environment variable (for GCP) or use default
+    port = int(os.environ.get('PORT', 5001))
+    
+    # Check if running in production (GCP)
+    is_production = os.environ.get('GAE_ENV', '').startswith('standard') or os.environ.get('K_SERVICE')
+    
+    if is_production:
+        app.run(host='0.0.0.0', port=port, debug=False)
+    else:
+        app.run(debug=True, port=port)

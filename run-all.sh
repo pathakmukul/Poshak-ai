@@ -33,7 +33,7 @@ sleep 8
 echo ""
 echo "Starting Flask backend..."
 source /Users/mukulpathak/PROJECTS/KapdaAI/kapdaai/bin/activate
-python flask_api.py &
+cd backend && python flask_api.py &
 FLASK_PID=$!
 
 # Start React frontend

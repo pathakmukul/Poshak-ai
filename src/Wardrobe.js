@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './Wardrobe.css';
 import UploadSegmentModal from './UploadSegmentModal';
 import { getUserImages, deleteUserImage, getMaskData } from './storageService';
+import API_URL from './config';
 
 function Wardrobe({ user, onBack }) {
   const [wardrobeItems, setWardrobeItems] = useState([]);
@@ -24,7 +25,7 @@ function Wardrobe({ user, onBack }) {
 
   // Load available garments when component mounts
   useEffect(() => {
-    fetch('http://localhost:5001/garments')
+    fetch(`${API_URL}/garments`)
       .then(res => res.json())
       .then(data => {
         if (data.garments) {
@@ -78,7 +79,7 @@ function Wardrobe({ user, onBack }) {
 
     try {
       // Use the new endpoint that works with stored masks - no reprocessing!
-      const geminiDataResponse = await fetch('http://localhost:5001/prepare-wardrobe-gemini', {
+      const geminiDataResponse = await fetch(`${API_URL}/prepare-wardrobe-gemini`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,7 +98,7 @@ function Wardrobe({ user, onBack }) {
       }
 
       // Perform the try-on
-      const tryOnResponse = await fetch('http://localhost:5001/gemini-tryon', {
+      const tryOnResponse = await fetch(`${API_URL}/gemini-tryon`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -366,7 +367,7 @@ function Wardrobe({ user, onBack }) {
                     <h4>Garment</h4>
                     {selectedGarment && (
                       <img 
-                        src={`http://localhost:5001/static/garments/${selectedGarment}`} 
+                        src={`${API_URL}/static/garments/${selectedGarment}`} 
                         alt="Garment" 
                         style={{ width: '100%', borderRadius: '8px', backgroundColor: '#f8f8f8' }}
                       />

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import './UploadSegmentModal.css';
 import { uploadUserImage, saveMaskData, saveMaskImage } from './storageService';
+import API_URL from './config';
 
 function UploadSegmentModal({ user, onClose, onSuccess }) {
   const [currentStep, setCurrentStep] = useState('upload'); // upload, segment, edit
@@ -13,6 +14,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
   const [selectedMaskIndices, setSelectedMaskIndices] = useState({ shirt: [], pants: [], shoes: [] });
   const [editCategory, setEditCategory] = useState('shirt'); // Separate state for edit mode category
   const [status, setStatus] = useState('');
+  const [personExtractionViz, setPersonExtractionViz] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleLocalFileSelect = (e) => {
@@ -40,7 +42,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
 
     try {
       // Call Flask API to process segmentation
-      const response = await fetch('/process', {
+      const response = await fetch(`${API_URL}/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -58,6 +60,11 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
       const data = await response.json();
       setSegmentResults(data);
       setStatus('Segmentation complete!');
+      
+      // Store person extraction visualization if available
+      if (data.person_extraction_viz) {
+        setPersonExtractionViz(data.person_extraction_viz);
+      }
       
       // If we need to edit masks, prepare the editable data
       if (data.masks) {
@@ -117,7 +124,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
     try {
       console.log('Sending mask selections to server:', selectedMaskIndices);
       // Use the simpler update-mask-labels endpoint
-      const response = await fetch('/update-mask-labels', {
+      const response = await fetch(`${API_URL}/update-mask-labels`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -294,10 +301,34 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
                   )}
                 </button>
                 {status && <p className="status-message">{status}</p>}
+                
+                {/* Show MediaPipe person extraction visualization */}
+                {personExtractionViz && (
+                  <div className="person-extraction-viz" style={{ marginTop: '20px', textAlign: 'center' }}>
+                    <h4 style={{ color: '#4CAF50' }}>MediaPipe Person Detection:</h4>
+                    <img 
+                      src={`data:image/png;base64,${personExtractionViz}`} 
+                      alt="Person extraction visualization"
+                      style={{ maxWidth: '100%', maxHeight: '400px', marginTop: '10px', border: '2px solid #4CAF50', borderRadius: '8px' }}
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="results-section">
                 <h3>Detected Clothing Items</h3>
+                
+                {/* Show MediaPipe person extraction visualization */}
+                {personExtractionViz && (
+                  <div className="person-extraction-viz" style={{ marginTop: '20px', textAlign: 'center' }}>
+                    <h4 style={{ color: '#4CAF50' }}>MediaPipe Person Detection:</h4>
+                    <img 
+                      src={`data:image/png;base64,${personExtractionViz}`} 
+                      alt="Person extraction visualization"
+                      style={{ maxWidth: '100%', maxHeight: '400px', marginTop: '10px', border: '2px solid #4CAF50', borderRadius: '8px' }}
+                    />
+                  </div>
+                )}
                 
                 {/* Tabs for categories */}
                 <div className="category-tabs">

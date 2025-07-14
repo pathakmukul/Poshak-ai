@@ -4,7 +4,7 @@ Improved configuration for SAM2 - optimized for clothing segmentation
 
 # SAM2 Configuration - Enhanced for better clothing detection
 SAM2_CONFIG = {
-    "points_per_side": 48,  # 2304 points for better coverage
+    "points_per_side": 32,  # 2304 points for better coverage
     "points_per_batch": 128,  # Process more points at once
     "pred_iou_thresh": 0.75,  # Lower threshold to catch more segments
     "stability_score_thresh": 0.88,  # More permissive for clothing
@@ -25,12 +25,7 @@ def get_active_sam2_config():
     """Returns the SAM2 configuration"""
     return SAM2_CONFIG
 
-# SigLIP Classification Configuration
-SIGLIP_CONFIG = {
-    "use_context": True,
-    "context_padding": 20,
-    "context_dim_factor": 0.3,
-}
+# Removed SigLIP config - using CLIP only
 
 # Classification thresholds
 CLASSIFICATION_CONFIG = {
@@ -52,13 +47,18 @@ PERFORMANCE_CONFIG = {
     "max_retry_attempts": 2,
 }
 
+# Person extraction configuration
+PERSON_EXTRACTION_CONFIG = {
+    "use_person_extraction": True,  # Enable MediaPipe person extraction
+    "padding_percent": 10,  # Padding around detected person
+    "model_selection": 1,  # 0 for general, 1 for landscape (better for full body)
+}
+
 # Debug options
 DEBUG_CONFIG = {
     "save_intermediate_images": False,
     "print_all_scores": False,
     "timing_details": True,
     "print_mask_stats": True,
-    "use_improved_siglip": False,
-    "use_fashion_siglip": False,
     "use_clip_instead": True,
 }
