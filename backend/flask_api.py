@@ -39,7 +39,7 @@ from transformers import AutoProcessor, AutoModel
 import time
 
 # Import configuration
-from config_improved import get_active_sam2_config, CLASSIFICATION_CONFIG, PERFORMANCE_CONFIG, DEBUG_CONFIG, PERSON_EXTRACTION_CONFIG
+from config_improved import CLASSIFICATION_CONFIG, DEBUG_CONFIG, PERSON_EXTRACTION_CONFIG
 # Removed SigLIP imports - using CLIP only
 from clip_classifier import classify_with_clip
 
@@ -48,6 +48,9 @@ from services.gemini_service import GeminiService
 
 # Import person extractor
 from services.person_extractor import extract_person_from_image
+
+# Import SAM2 service
+from services.sam2_service import process_with_replicate
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -81,126 +84,6 @@ def file_to_base64(file_path):
     """Convert file content directly to base64 string"""
     with open(file_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
-
-def process_with_replicate(image_path):
-    """Process image using Replicate API"""
-    print("Processing with Replicate API...")
-    
-    # Check if Replicate API token is set
-    if not os.environ.get('REPLICATE_API_TOKEN'):
-        raise Exception("REPLICATE_API_TOKEN environment variable not set. Get your token from https://replicate.com/account/api-tokens")
-    
-    # Log the image being processed
-    img = cv2.imread(image_path)
-    print(f"🎯 SAM2 processing image from: {image_path}")
-    print(f"🎯 Image dimensions: {img.shape if img is not None else 'Unknown'}")
-    
-    # Convert image to base64 for upload
-    img_data = file_to_base64(image_path)
-    img_uri = f"data:image/png;base64,{img_data}"
-    
-    try:
-        # Get active configuration to use with Replicate
-        config = get_active_sam2_config()
-        
-        # Log the configuration being used
-        print(f"\n=== Using SAM2 Improved Configuration ===")
-        print(f"Key parameters:")
-        print(f"  - points_per_side: {config.get('points_per_side', 32)}")
-        print(f"  - pred_iou_thresh: {config.get('pred_iou_thresh', 0.88)}")
-        print(f"  - box_nms_thresh: {config.get('box_nms_thresh', 0.7)}")
-        print(f"  - mask_threshold: {config.get('mask_threshold', 0.0)}")
-        print(f"  - multimask_output: {config.get('multimask_output', True)}")
-        print(f"=======================\n")
-        
-        # Run SAM-2 on Replicate with our config
-        start_time = time.time()
-        print("🚀 Sending request to Replicate SAM2...")
-        output = replicate.run(
-            "meta/sam-2:fe97b453a6455861e3bac769b441ca1f1086110da7466dbb65cf1eecfd60dc83",
-            input={
-                "image": img_uri,
-                "use_m2m": config.get("use_m2m", True),
-                "points_per_side": config.get("points_per_side", 32),
-                "points_per_batch": config.get("points_per_batch", 64),
-                "pred_iou_thresh": config.get("pred_iou_thresh", 0.88),
-                "stability_score_thresh": config.get("stability_score_thresh", 0.95),
-                "stability_score_offset": config.get("stability_score_offset", 1.0),
-                "mask_threshold": config.get("mask_threshold", 0.0),
-                "box_nms_thresh": config.get("box_nms_thresh", 0.7),
-                "crop_n_layers": config.get("crop_n_layers", 0),
-                "crop_nms_thresh": config.get("crop_nms_thresh", 0.7),
-                "crop_overlap_ratio": config.get("crop_overlap_ratio", 512/1500),
-                "crop_n_points_downscale_factor": config.get("crop_n_points_downscale_factor", 1),
-                "min_mask_region_area": config.get("min_mask_region_area", 0),
-                "multimask_output": config.get("multimask_output", True)
-            }
-        )
-        sam2_time = time.time() - start_time
-        print(f"⏱️  Replicate SAM2 API completed in: {sam2_time:.2f} seconds")
-        
-        # Process the output masks
-        masks = []
-        
-        # Debug: print output structure
-        print(f"Replicate output type: {type(output)}")
-        if isinstance(output, dict):
-            print(f"Output keys: {output.keys()}")
-        
-        # Handle different output formats from Replicate
-        if output:
-            # Check if output is a direct URL (string)
-            if isinstance(output, str):
-                # Single mask URL
-                mask_urls = [output]
-            elif isinstance(output, list):
-                # List of mask URLs
-                mask_urls = output
-            elif isinstance(output, dict):
-                # Dictionary with masks
-                if 'masks' in output:
-                    mask_urls = output['masks']
-                elif 'individual_masks' in output:
-                    mask_urls = output['individual_masks']
-                else:
-                    print(f"Unexpected output format: {output}")
-                    mask_urls = []
-            else:
-                mask_urls = []
-            
-            # Process each mask URL
-            for i, mask_url in enumerate(mask_urls):
-                try:
-                    # Download mask image
-                    response = requests.get(mask_url)
-                    mask_img = Image.open(BytesIO(response.content))
-                    mask_array = np.array(mask_img.convert('L'))
-                    
-                    # Convert to boolean mask
-                    mask_bool = mask_array > 128
-                    
-                    # Calculate area and other properties
-                    y_indices, x_indices = np.where(mask_bool)
-                    if len(y_indices) > 0:
-                        masks.append({
-                            'segmentation': mask_bool,
-                            'area': int(mask_bool.sum()),
-                            'bbox': [int(x_indices.min()), int(y_indices.min()), 
-                                    int(x_indices.max()), int(y_indices.max())],
-                            'predicted_iou': 0.9  # Default value
-                        })
-                except Exception as mask_error:
-                    print(f"Error processing mask {i}: {str(mask_error)}")
-                    continue
-        
-        print(f"Processed {len(masks)} masks from Replicate")
-        return masks, sam2_time
-        
-    except Exception as e:
-        print(f"Replicate API error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise
 
 def create_clothing_visualization(image_rgb, masks, clothing_type, for_gemini=False):
     """Create visualization for specific clothing type
@@ -720,7 +603,9 @@ def process_image():
                 cv2.imwrite(temp_path, image)
                 full_image_path = temp_path
             
-            masks, sam2_time = process_with_replicate(full_image_path)
+            # Pass whether image was cropped by MediaPipe
+            is_person_cropped = person_bbox is not None
+            masks, sam2_time = process_with_replicate(full_image_path, is_person_cropped)
             print(f"Generated {len(masks)} masks via Replicate in {sam2_time:.2f} seconds")
         except Exception as e:
             print(f"Replicate API error: {str(e)}")

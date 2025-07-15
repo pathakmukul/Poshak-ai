@@ -2,28 +2,7 @@
 Improved configuration for SAM2 - optimized for clothing segmentation
 """
 
-# SAM2 Configuration - Enhanced for better clothing detection
-SAM2_CONFIG = {
-    "points_per_side": 32,  # 2304 points for better coverage
-    "points_per_batch": 128,  # Process more points at once
-    "pred_iou_thresh": 0.75,  # Lower threshold to catch more segments
-    "stability_score_thresh": 0.88,  # More permissive for clothing
-    "stability_score_offset": 0.7,  # Lower offset for more mask variations
-    "mask_threshold": -0.5,  # Negative for softer boundaries
-    "box_nms_thresh": 0.5,  # Lower NMS to keep overlapping clothing items
-    "crop_n_layers": 1,  # Multi-scale helps with shoes and accessories
-    "crop_nms_thresh": 0.7,  # Standard crop NMS
-    "crop_overlap_ratio": 0.4,  # More overlap for better boundaries
-    "crop_n_points_downscale_factor": 2,
-    "min_mask_region_area": 100,  # Filter out noise but keep small items
-    "multimask_output": True,  # Get 3 masks per point
-    "use_m2m": True,  # Mask-to-mask refinement for cleaner boundaries
-}
-
-# Get the active configuration
-def get_active_sam2_config():
-    """Returns the SAM2 configuration"""
-    return SAM2_CONFIG
+# SAM2 configuration moved to services/sam2_service.py
 
 # Removed SigLIP config - using CLIP only
 
@@ -37,15 +16,7 @@ CLASSIFICATION_CONFIG = {
     "max_shoe_area": 10000,
 }
 
-# Performance optimizations
-PERFORMANCE_CONFIG = {
-    "resize_for_detection": False,
-    "max_image_size": 1024,
-    "skip_very_large_masks": True,
-    "batch_classification": False,
-    "adaptive_quality": True,
-    "max_retry_attempts": 2,
-}
+# Performance config removed - not used
 
 # Person extraction configuration
 PERSON_EXTRACTION_CONFIG = {
