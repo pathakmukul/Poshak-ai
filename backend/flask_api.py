@@ -15,6 +15,7 @@ import requests
 import json
 import pickle
 from datetime import datetime
+import threading
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,7 +42,7 @@ import time
 # Import configuration
 from config_improved import CLASSIFICATION_CONFIG, DEBUG_CONFIG, PERSON_EXTRACTION_CONFIG
 # Removed SigLIP imports - using CLIP only
-from clip_classifier import classify_with_clip
+from clip_classifier import classify_with_clip, classify_batch_with_clip
 
 # Import Gemini service
 from services.gemini_service import GeminiService
@@ -49,8 +50,9 @@ from services.gemini_service import GeminiService
 # Import person extractor
 from services.person_extractor import extract_person_from_image
 
-# Import SAM2 service
-from services.sam2_service import process_with_replicate
+# Import SAM2 service and provider config
+from services.sam2_service import process_with_replicate, process_with_fal
+from config_improved import SAM2_PROVIDER_CONFIG
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -58,20 +60,27 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Global models for CLIP classification
 processor = None
 model = None
+_model_lock = threading.Lock()  # Thread lock for safe model loading
 
 # Initialize Gemini service
 gemini_service = GeminiService()
 
+# Models will be loaded on first use to avoid Cloud Run preload issues
+
 # No Firebase Admin needed - client handles Firebase
 
 def load_classification_models():
-    """Load classification models - delegates to clip_classifier module"""
+    """Load classification models with thread safety"""
     global processor, model
     
     if processor is None or model is None:
-        # Load from clip_classifier module to keep flask_api.py clean
-        from clip_classifier import load_clip_model
-        processor, model = load_clip_model()
+        with _model_lock:  # Ensure only one thread loads the model
+            # Double-check after acquiring lock
+            if processor is None or model is None:
+                print("Thread acquired lock, loading CLIP models...")
+                from clip_classifier import load_clip_model
+                processor, model = load_clip_model()
+                print("CLIP models loaded and cached in memory!")
 
 def image_to_base64(image):
     """Convert numpy array to base64 string"""
@@ -389,6 +398,17 @@ def load_masks_from_file(image_path):
 def home():
     return jsonify({"status": "Flask API is running"})
 
+@app.route('/health')
+def health():
+    """Health check endpoint that also pre-warms the model"""
+    # Load models if not already loaded
+    load_classification_models()
+    return jsonify({
+        "status": "healthy",
+        "models_loaded": processor is not None and model is not None,
+        "timestamp": datetime.now().isoformat()
+    })
+
 @app.route('/static/<filename>')
 def serve_person_image(filename):
     """Serve person images"""
@@ -594,9 +614,9 @@ def process_image():
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
                 person_extraction_viz = image_to_base64(viz_img)
         
-        # Always use Replicate API for SAM2
+        # Use configured provider for SAM2
         try:
-            # Ensure we have a saved file path for Replicate
+            # Ensure we have a saved file path for the API
             if not full_image_path:
                 # Create a temporary file if we only have image data
                 temp_path = os.path.join(base_dir, 'temp_process_image.jpg')
@@ -605,11 +625,21 @@ def process_image():
             
             # Pass whether image was cropped by MediaPipe
             is_person_cropped = person_bbox is not None
-            masks, sam2_time = process_with_replicate(full_image_path, is_person_cropped)
-            print(f"Generated {len(masks)} masks via Replicate in {sam2_time:.2f} seconds")
+            
+            # Choose provider based on configuration
+            provider = SAM2_PROVIDER_CONFIG.get("provider", "replicate")
+            print(f"Using SAM2 provider: {provider}")
+            
+            if provider == "fal":
+                masks, sam2_time = process_with_fal(full_image_path, is_person_cropped)
+                print(f"Generated {len(masks)} masks via FAL in {sam2_time:.2f} seconds")
+            else:
+                masks, sam2_time = process_with_replicate(full_image_path, is_person_cropped)
+                print(f"Generated {len(masks)} masks via Replicate in {sam2_time:.2f} seconds")
         except Exception as e:
-            print(f"Replicate API error: {str(e)}")
-            return jsonify({'error': f'Replicate API failed: {str(e)}'}), 500
+            provider_name = SAM2_PROVIDER_CONFIG.get("provider", "replicate").upper()
+            print(f"{provider_name} API error: {str(e)}")
+            return jsonify({'error': f'{provider_name} API failed: {str(e)}'}), 500
         
         # Adjust mask coordinates back to original image space if person was extracted
         if person_bbox is not None:
@@ -787,56 +817,43 @@ def process_image():
         # Classify each mask
         classification_model = "CLIP"  # Always using CLIP now
         print(f"Classifying {len(masks)} masks with {classification_model}...")
-        print(f"Using labels: {all_labels[:10]}... (showing first 10 of {len(all_labels)})")
+        print(f"Using batch processing for faster classification")
         start_classification = time.time()
         clothing_detections = {"shirt": 0, "pants": 0, "shoes": 0}
         
+        # Prepare data for batch processing
+        mask_images = []
+        mask_metadata = []
+        masks_to_classify = []
+        
+        # First pass: prepare images and filter out obvious non-clothing
         for i, mask_dict in enumerate(masks):
-            if i % 10 == 0:
-                print(f"  Processing mask {i}/{len(masks)}...")
             mask = mask_dict['segmentation']
             
             # Skip very large masks based on config
             if mask_dict['area'] > CLASSIFICATION_CONFIG["max_background_ratio"] * image_rgb.shape[0] * image_rgb.shape[1]:
                 mask_dict['label'] = 'background'
                 mask_dict['confidence'] = 1.0
+                mask_dict['skip_classification'] = True
+                continue
+            
+            # Skip very small masks (likely noise)
+            if mask_dict['area'] < 500:  # Too small to be clothing
+                mask_dict['label'] = 'noise'
+                mask_dict['confidence'] = 1.0
+                mask_dict['skip_classification'] = True
                 continue
             
             # Position hints
             y_indices, x_indices = np.where(mask)
             if len(y_indices) == 0:
+                mask_dict['skip_classification'] = True
                 continue
+            
             center_y = y_indices.mean() / image_rgb.shape[0]
-            
-            # Replicate uses its own optimized model
-            is_v21 = False  # Always false since we only use Replicate
-            
-            # Adjust thresholds for SAM 2.1
-            if is_v21:
-                # SAM 2.1 produces smaller segments, adjust thresholds
-                shirt_area_min = 10000  # Lower threshold
-                shirt_area_max = 50000
-                pants_area_min = 10000
-                pants_area_max = 35000
-                shoe_area_max = 8000  # Higher for SAM 2.1
-                shoe_area_min = 300
-            else:
-                # Original thresholds for SAM 2.0
-                shirt_area_min = 20000
-                shirt_area_max = 60000
-                pants_area_min = 20000
-                pants_area_max = 40000
-                shoe_area_max = 5000
-                shoe_area_min = 500
-            
-            # Better classification logic
             aspect_ratio = (x_indices.max() - x_indices.min()) / (y_indices.max() - y_indices.min() + 1)
             
-            # Use ALL labels for classification (like the working version)
-            descriptive_hints = all_labels  # All 40+ options
-            
             # Create a proper isolated mask for classification
-            # Use the ORIGINAL image, not enhanced
             y_min, y_max = y_indices.min(), y_indices.max()
             x_min, x_max = x_indices.min(), x_indices.max()
             
@@ -860,66 +877,87 @@ def process_image():
             # Convert to PIL - use RGB mode for classification models
             pil_img = Image.fromarray(masked_rgba[:, :, :3])  # Convert RGBA to RGB for models
             
-            # Always use CLIP for classification
-            classification_result = classify_with_clip(
-                pil_img, processor, model, position_y=center_y, area_ratio=area_ratio
-            )
+            # Store for batch processing
+            mask_images.append(pil_img)
+            mask_metadata.append({
+                'index': i,
+                'center_y': center_y,
+                'area_ratio': aspect_ratio,
+                'mask_dict': mask_dict
+            })
+            masks_to_classify.append(i)
+        
+        # Batch classify all masks at once
+        if mask_images:
+            print(f"  Batch processing {len(mask_images)} masks...")
+            batch_results = classify_batch_with_clip(mask_images, processor, model)
             
-            detected_label = classification_result['label']
-            mask_dict['full_label'] = detected_label
-            mask_dict['confidence'] = classification_result['confidence']
-            all_scores = classification_result.get('all_scores', {})
+            # Apply results back to masks
+            for j, result in enumerate(batch_results):
+                i = masks_to_classify[j]
+                mask_dict = masks[i]
+                metadata = mask_metadata[j]
+                
+                detected_label = result['label']
+                mask_dict['full_label'] = detected_label
+                mask_dict['confidence'] = result['confidence']
+                all_scores = result.get('all_scores', {})
             
-            # For debug
-            descriptive_hints = list(all_scores.keys())
-            
-            # Store debug info for CLIP
-            mask_dict['debug_info'] = {
-                'prompts': descriptive_hints,
-                'all_scores': all_scores,
-                'position_y': center_y,
-                'mask_area': mask_dict['area'],
-                'aspect_ratio': aspect_ratio,
-                'model': 'CLIP'
-            }
-            
-            # Add mask ID for tracking
-            mask_dict['mask_id'] = i
-            
-            # Just use what CLIP says, no corrections based on position
-            print(f"    Mask {i}: detected as '{detected_label}' ({mask_dict['confidence']:.1%}), y_pos={center_y:.2f}")
-            
-            # Store the original detected label
-            mask_dict['original_label'] = detected_label
-            mask_dict['original_confidence'] = mask_dict['confidence']
-            
-            # Mark non-clothing items but don't skip them
-            if detected_label in non_clothing:
-                mask_dict['label'] = 'non_clothing'
-                mask_dict['skip_viz'] = True  # Flag for visualization to skip
-            # Map to simple categories for visualization
-            elif detected_label in ["shirt", "t-shirt", "blouse", "top", "sweater", "hoodie", "jacket", "coat", "vest"]:
-                mask_dict['label'] = 'shirt'
-            elif detected_label in ["pants", "jeans", "trousers", "shorts", "skirt", "leggings"]:
-                mask_dict['label'] = 'pants'
-            elif detected_label in ["shoes", "sneakers", "boots", "sandals", "heels"]:
-                mask_dict['label'] = 'shoes'
-            elif detected_label in ["dress", "suit", "jumpsuit"]:
-                mask_dict['label'] = 'dress'
-            else:
-                # Accessories or other
-                mask_dict['label'] = detected_label
-            
-            # Count what we detected
-            if mask_dict['label'] in ['shirt', 'pants', 'shoes']:
-                clothing_detections[mask_dict['label']] += 1
-            
-            # Add the input image to debug info
-            if 'debug_info' in mask_dict:
-                mask_dict['debug_info']['input_image'] = image_to_base64(np.array(pil_img))
+                # For debug
+                descriptive_hints = list(all_scores.keys())
+                
+                # Store debug info for CLIP
+                mask_dict['debug_info'] = {
+                    'prompts': descriptive_hints,
+                    'all_scores': all_scores,
+                    'position_y': metadata['center_y'],
+                    'mask_area': mask_dict['area'],
+                    'aspect_ratio': metadata['area_ratio'],
+                    'model': 'CLIP'
+                }
+                
+                # Add mask ID for tracking
+                mask_dict['mask_id'] = i
+                
+                # Store the original detected label
+                mask_dict['original_label'] = detected_label
+                mask_dict['original_confidence'] = mask_dict['confidence']
+                
+                # Mark non-clothing items but don't skip them
+                if detected_label in non_clothing:
+                    mask_dict['label'] = 'non_clothing'
+                    mask_dict['skip_viz'] = True  # Flag for visualization to skip
+                # Map to simple categories for visualization
+                elif detected_label in ["shirt", "t-shirt", "blouse", "top", "sweater", "hoodie", "jacket", "coat", "vest"]:
+                    mask_dict['label'] = 'shirt'
+                elif detected_label in ["pants", "jeans", "trousers", "shorts", "skirt", "leggings"]:
+                    mask_dict['label'] = 'pants'
+                elif detected_label in ["shoes", "sneakers", "boots", "sandals", "heels"]:
+                    mask_dict['label'] = 'shoes'
+                elif detected_label in ["dress", "suit", "jumpsuit"]:
+                    mask_dict['label'] = 'dress'
+                else:
+                    # Accessories or other
+                    mask_dict['label'] = detected_label
+                
+                # Count what we detected
+                if mask_dict['label'] in ['shirt', 'pants', 'shoes']:
+                    clothing_detections[mask_dict['label']] += 1
+                
+                # Add the input image to debug info
+                if 'debug_info' in mask_dict:
+                    mask_dict['debug_info']['input_image'] = image_to_base64(np.array(mask_images[j]))
+        
+        # Handle masks that were skipped
+        for i, mask_dict in enumerate(masks):
+            if 'label' not in mask_dict:
+                mask_dict['label'] = 'unknown'
+                mask_dict['confidence'] = 0.0
+                mask_dict['skip_viz'] = True
         
         classification_time = time.time() - start_classification
-        print(f"⏱️  CLIP classification completed in: {classification_time:.2f} seconds")
+        print(f"⏱️  CLIP batch classification completed in: {classification_time:.2f} seconds")
+        print(f"   Processed {len(mask_images)} masks in a single batch")
         
         # Post-process to keep only best masks for each category
         print("\nPost-processing: Keeping best masks for each clothing type...")
@@ -1060,8 +1098,9 @@ def process_image():
         visualizations = generate_all_visualizations(image_rgb, masks)
         
         # Log timing breakdown
+        provider = SAM2_PROVIDER_CONFIG.get("provider", "replicate")
         print(f"\n=== Timing Breakdown ===")
-        print(f"Replicate API used for SAM2")
+        print(f"{provider.upper()} API used for SAM2")
         print(f"SAM2 inference: {sam2_time:.2f}s")
         print(f"{classification_model} classification: {classification_time:.2f}s")
         print(f"Total processing: {total_time:.2f}s")

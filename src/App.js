@@ -3,12 +3,13 @@ import './App.css';
 import Login from './Login';
 import Wardrobe from './Wardrobe';
 import Closet from './Closet';
+import OpenAISwitch from './OpenAISwitch';
 import { auth, logoutUser } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', or 'closet'
+  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', or 'openai'
 
   // Handle user login
   const handleLogin = (user) => {
@@ -60,6 +61,11 @@ function App() {
   // Show closet view
   if (currentView === 'closet') {
     return <Closet user={currentUser} onBack={() => setCurrentView('main')} />;
+  }
+
+  // Show OpenAI switch view
+  if (currentView === 'openai') {
+    return <OpenAISwitch user={currentUser} onBack={() => setCurrentView('main')} />;
   }
 
   // Main view - clean homepage
@@ -119,6 +125,13 @@ function App() {
               <h3>My Closet</h3>
               <p>View your collection of clothing items</p>
               <button className="card-button">Open Closet →</button>
+            </div>
+            
+            <div className="action-card" onClick={() => setCurrentView('openai')}>
+              <div className="card-icon">🎨</div>
+              <h3>OpenAI Switch</h3>
+              <p>Generate outfits with AI-powered variations</p>
+              <button className="card-button">Try Now →</button>
             </div>
             
             <div className="action-card coming-soon">

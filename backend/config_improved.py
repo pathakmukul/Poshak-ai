@@ -33,3 +33,9 @@ DEBUG_CONFIG = {
     "print_mask_stats": True,
     "use_clip_instead": True,
 }
+
+# SAM2 Provider configuration
+SAM2_PROVIDER_CONFIG = {
+    "provider": "fal",  # Options: "replicate" or "fal"
+    "fal_endpoint": "https://fal.run/fal-ai/sam2/auto-segment"
+}

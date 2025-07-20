@@ -7,14 +7,13 @@ steps:
       - |
         docker pull gcr.io/$PROJECT_ID/kapdaai-backend:latest || exit 0
 
-  # Build with cache from previous image
+  # Build without cache to ensure fresh build
   - name: 'gcr.io/cloud-builders/docker'
     args: 
       - 'build'
       - '-t'
       - 'gcr.io/$PROJECT_ID/kapdaai-backend:latest'
-      - '--cache-from'
-      - 'gcr.io/$PROJECT_ID/kapdaai-backend:latest'
+      - '--no-cache'
       - '.'
 
   # Push the new image

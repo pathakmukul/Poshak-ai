@@ -1,0 +1,141 @@
+2025-07-15 01:38:14.815 PDT
+Cloud RunReplaceServicekapdaai-backendiammap26@gmail.com {@type: type.googleapis.com/google.cloud.audit.AuditLog, authenticationInfo: {…}, authorizationInfo: […], methodName: google.cloud.run.v1.Services.ReplaceService, request: {…}, requestMetadata: {…}, resourceLocation: {…}, resourceName: namespaces/poshakai/services/kapdaai-backend, serviceName: run.g…
+2025-07-15 01:38:20.953 PDT
+[2025-07-15 08:38:20 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2025-07-15 01:38:20.954 PDT
+[2025-07-15 08:38:20 +0000] [1] [INFO] Listening at: http://0.0.0.0:8080 (1)
+2025-07-15 01:38:20.954 PDT
+[2025-07-15 08:38:20 +0000] [1] [INFO] Using worker: gthread
+2025-07-15 01:38:20.955 PDT
+Default STARTUP TCP probe succeeded after 1 attempt for container "kapdaai-backend-1" on port 8080.
+2025-07-15 01:38:20.972 PDT
+[2025-07-15 08:38:20 +0000] [2] [INFO] Booting worker with pid: 2
+2025-07-15 01:38:21.032 PDT
+Cloud RunReplaceServicekapdaai-backend-00022-rjw {@type: type.googleapis.com/google.cloud.audit.AuditLog, methodName: /Services.ReplaceService, resourceName: namespaces/poshakai/revisions/kapdaai-backend-00022-rjw, response: {…}, serviceName: run.googleapis.com, status: {…}}
+2025-07-15 01:38:22.360 PDT
+Cloud RunReplaceServicekapdaai-backend {@type: type.googleapis.com/google.cloud.audit.AuditLog, methodName: /Services.ReplaceService, resourceName: namespaces/poshakai/services/kapdaai-backend, response: {…}, serviceName: run.googleapis.com, status: {…}}
+2025-07-15 01:39:57.165 PDT
+/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py:111: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+2025-07-15 01:39:57.165 PDT
+warnings.warn(
+2025-07-15 01:40:22.568 PDT
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+2025-07-15 01:40:22.568 PDT
+W0000 00:00:1752568822.569324 25 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+2025-07-15 01:40:22.642 PDT
+⏱️ MediaPipe extraction completed in: 0.19 seconds
+2025-07-15 01:40:22.642 PDT
+Person detected! Bbox: (124, 7, 462, 1079)
+2025-07-15 01:40:23.286 PDT
+✅ MediaPipe detected person! Processing cropped region: (1079, 462, 3)
+2025-07-15 01:40:23.286 PDT
+✅ Cropped person saved to: /app/temp_person_cropped.jpg
+2025-07-15 01:40:23.286 PDT
+✅ SAM2 will process ONLY the person region, not the full image
+2025-07-15 01:40:23.286 PDT
+Using SAM2 provider: fal
+2025-07-15 01:40:23.286 PDT
+Processing with FAL API...
+2025-07-15 01:40:23.291 PDT
+🎯 SAM2 processing image from: /app/temp_person_cropped.jpg
+2025-07-15 01:40:23.291 PDT
+🎯 Image dimensions: (1079, 462, 3)
+2025-07-15 01:40:23.291 PDT
+🎯 Person pre-cropped: True
+2025-07-15 01:40:23.292 PDT
+- points_per_side: 32
+2025-07-15 01:40:23.292 PDT
+- pred_iou_thresh: 0.75
+2025-07-15 01:40:23.292 PDT
+- stability_score_thresh: 0.88
+2025-07-15 01:40:23.292 PDT
+- min_mask_region_area: 100
+2025-07-15 01:40:23.292 PDT
+=======================
+2025-07-15 01:40:23.292 PDT
+🚀 Sending request to FAL SAM2...
+2025-07-15 01:40:24.847 PDT
+⏱️ FAL SAM2 API completed in: 1.55 seconds
+2025-07-15 01:40:24.847 PDT
+Found 24 mask URLs from FAL
+2025-07-15 01:40:38.979 PDT
+Converted 24 masks to SAM format
+2025-07-15 01:40:38.980 PDT
+Generated 24 masks via FAL in 1.55 seconds
+2025-07-15 01:40:38.980 PDT
+Adjusting 24 masks back to original image coordinates...
+2025-07-15 01:40:39.004 PDT
+=== Mask Statistics ===
+2025-07-15 01:40:39.004 PDT
+Total masks: 24
+2025-07-15 01:40:39.004 PDT
+IoU scores: min=0.90, max=0.90, avg=0.90
+2025-07-15 01:40:39.004 PDT
+Areas: min=198, max=173674, avg=27279
+2025-07-15 01:40:39.004 PDT
+Stability: min=0.90, max=0.90, avg=0.90
+2025-07-15 01:40:39.004 PDT
+Size distribution: small=6, medium=15, large=3
+2025-07-15 01:40:39.004 PDT
+======================
+2025-07-15 01:40:39.004 PDT
+Filtering 24 raw masks...
+2025-07-15 01:40:39.004 PDT
+Pre-filtered to 24 potential clothing masks
+2025-07-15 01:40:39.004 PDT
+Refining mask edges with advanced processing...
+2025-07-15 01:40:40.988 PDT
+Refined to 24 high-quality masks
+2025-07-15 01:40:40.988 PDT
+Loading CLIP model for classification...
+
+2025-07-15 01:40:41.001 PDT
+Local cache not found, downloading openai/clip-vit-base-patch32...
+2025-07-15 01:40:41.077 PDT
+HTTP Error 429 thrown while requesting HEAD https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:40:41.077 PDT
+Retrying in 1s [Retry 1/5].
+2025-07-15 01:40:42.092 PDT
+HTTP Error 429 thrown while requesting HEAD https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:40:42.092 PDT
+Retrying in 2s [Retry 2/5].
+2025-07-15 01:40:44.108 PDT
+HTTP Error 429 thrown while requesting HEAD https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:40:44.108 PDT
+Retrying in 4s [Retry 3/5].
+2025-07-15 01:40:48.124 PDT
+HTTP Error 429 thrown while requesting HEAD https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:40:48.124 PDT
+Retrying in 8s [Retry 4/5].
+2025-07-15 01:40:56.139 PDT
+HTTP Error 429 thrown while requesting HEAD https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:40:56.139 PDT
+Retrying in 8s [Retry 5/5].
+2025-07-15 01:41:04.154 PDT
+HTTP Error 429 thrown while requesting HEAD https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:41:04.155 PDT
+Error in process_image: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+2025-07-15 01:41:04.155 PDT
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2025-07-15 01:41:04.178 PDT
+Traceback (most recent call last): File "/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py", line 470, in cached_files hf_hub_download( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/utils/_validators.py", line 114, in _inner_fn return fn(*args, **kwargs) File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1008, in hf_hub_download return _hf_hub_download_to_cache_dir( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1115, in _hf_hub_download_to_cache_dir _raise_on_head_call_error(head_call_error, force_download, local_files_only) File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1636, in _raise_on_head_call_error raise LocalEntryNotFoundError( huggingface_hub.errors.LocalEntryNotFoundError: Cannot find the requested files in the disk cache and outgoing traffic has been disabled. To enable hf.co look-ups and downloads online, set 'local_files_only' to False.
+2025-07-15 01:41:04.178 PDT
+The above exception was the direct cause of the following exception:
+2025-07-15 01:41:04.178 PDT
+Traceback (most recent call last): File "/app/clip_classifier.py", line 37, in load_clip_model _clip_processor = CLIPProcessor.from_pretrained( File "/usr/local/lib/python3.9/site-packages/transformers/processing_utils.py", line 1306, in from_pretrained args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, **kwargs) File "/usr/local/lib/python3.9/site-packages/transformers/processing_utils.py", line 1365, in _get_arguments_from_pretrained args.append(attribute_class.from_pretrained(pretrained_model_name_or_path, **kwargs)) File "/usr/local/lib/python3.9/site-packages/transformers/image_processing_base.py", line 206, in from_pretrained image_processor_dict, kwargs = cls.get_image_processor_dict(pretrained_model_name_or_path, **kwargs) File "/usr/local/lib/python3.9/site-packages/transformers/image_processing_base.py", line 338, in get_image_processor_dict resolved_image_processor_file = cached_file( File "/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py", line 312, in cached_file file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs) File "/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py", line 543, in cached_files raise OSError( OSError: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+2025-07-15 01:41:04.178 PDT
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2025-07-15 01:41:04.178 PDT
+During handling of the above exception, another exception occurred:
+2025-07-15 01:41:04.178 PDT
+Traceback (most recent call last): File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1533, in _get_metadata_or_catch_error metadata = get_hf_file_metadata( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/utils/_validators.py", line 114, in _inner_fn return fn(*args, **kwargs) File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1450, in get_hf_file_metadata r = _request_wrapper( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 286, in _request_wrapper response = _request_wrapper( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 309, in _request_wrapper response = http_backoff(method=method, url=url, **params, retry_on_exceptions=(), retry_on_status_codes=(429,)) File "/usr/local/lib/python3.9/site-packages/huggingface_hub/utils/_http.py", line 317, in http_backoff response.raise_for_status() # Will raise uncaught exception File "/usr/local/lib/python3.9/site-packages/requests/models.py", line 1026, in raise_for_status raise HTTPError(http_error_msg, response=self) requests.exceptions.HTTPError: 429 Client Error: Too Many Requests for url: https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/preprocessor_config.json
+2025-07-15 01:41:04.178 PDT
+The above exception was the direct cause of the following exception:
+2025-07-15 01:41:04.178 PDT
+Traceback (most recent call last): File "/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py", line 470, in cached_files hf_hub_download( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/utils/_validators.py", line 114, in _inner_fn return fn(*args, **kwargs) File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1008, in hf_hub_download return _hf_hub_download_to_cache_dir( File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1115, in _hf_hub_download_to_cache_dir _raise_on_head_call_error(head_call_error, force_download, local_files_only) File "/usr/local/lib/python3.9/site-packages/huggingface_hub/file_download.py", line 1648, in _raise_on_head_call_error raise LocalEntryNotFoundError( huggingface_hub.errors.LocalEntryNotFoundError: An error happened while trying to locate the file on the Hub and we cannot find the requested files in the local cache. Please check your connection and try again or make sure your Internet connection is on.
+2025-07-15 01:41:04.178 PDT
+The above exception was the direct cause of the following exception:
+2025-07-15 01:41:04.178 PDT
+Traceback (most recent call last): File "/app/flask_api.py", line 796, in process_image load_classification_models() File "/app/flask_api.py", line 75, in load_classification_models processor, model = load_clip_model() File "/app/clip_classifier.py", line 52, in load_clip_model _clip_processor = CLIPProcessor.from_pretrained( File "/usr/local/lib/python3.9/site-packages/transformers/processing_utils.py", line 1306, in from_pretrained args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, **kwargs) File "/usr/local/lib/python3.9/site-packages/transformers/processing_utils.py", line 1365, in _get_arguments_from_pretrained args.append(attribute_class.from_pretrained(pretrained_model_name_or_path, **kwargs)) File "/usr/local/lib/python3.9/site-packages/transformers/image_processing_base.py", line 206, in from_pretrained image_processor_dict, kwargs = cls.get_image_processor_dict(pretrained_model_name_or_path, **kwargs) File "/usr/local/lib/python3.9/site-packages/transformers/image_processing_base.py", line 338, in get_image_processor_dict resolved_image_processor_file = cached_file( File "/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py", line 312, in cached_file file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs) File "/usr/local/lib/python3.9/site-packages/transformers/utils/hub.py", line 543, in cached_files raise OSError( OSError: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+2025-07-15 01:41:04.178 PDT
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.

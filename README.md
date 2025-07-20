@@ -57,11 +57,12 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 - `src/storageService.js` - Firebase storage operations for images and masks
 
 ### Backend Files
-- `flask_api.py` - Main Flask server with all API endpoints (SAM2 via Replicate only)
-- `config_improved.py` - Simplified configuration with enhanced SAM2 parameters
-- `services/gemini_service.py` - NEW! Gemini API service for virtual try-on functionality
-- `clip_classifier.py` - CLIP-based clothing classification (fast and accurate)
-- `services/person_extractor.py` - MediaPipe person detection to reduce background noise
+- `backend/flask_api.py` - Main Flask server with all API endpoints (SAM2 via Replicate only)
+- `backend/config_improved.py` - Simplified configuration with enhanced SAM2 parameters
+- `backend/services/gemini_service.py` - NEW! Gemini API service for virtual try-on functionality
+- `backend/services/sam2_service.py` - SAM2 segmentation via Replicate API with mask conversion
+- `backend/clip_classifier.py` - CLIP-based clothing classification (fast and accurate)
+- `backend/services/person_extractor.py` - MediaPipe person detection to reduce background noise
 
 ### Configuration Files
 - `.env` - Environment variables (API keys)
@@ -114,8 +115,23 @@ The app runs on:
 
 Required in `.env`:
 ```
-REPLICATE_API_TOKEN=your_replicate_token
-GOOGLE_API_KEY=your_gemini_key  # Optional for try-on
+REPLICATE_API_TOKEN=your_replicate_token  # For Replicate provider
+FAL_KEY=your_fal_key                      # For FAL provider
+GOOGLE_API_KEY=your_gemini_key            # Optional for try-on
+```
+
+## Switching SAM2 Providers
+
+KapdaAI supports two providers for SAM2 segmentation:
+- **Replicate** (default): The original implementation
+- **FAL**: Alternative provider with similar performance
+
+To switch providers, update the `provider` field in `backend/config_improved.py`:
+```python
+SAM2_PROVIDER_CONFIG = {
+    "provider": "fal",  # Options: "replicate" or "fal"
+    "fal_endpoint": "https://fal.run/fal-ai/sam2/auto-segment"
+}
 ```
 
 ## Key Features Implementation
@@ -138,7 +154,12 @@ GOOGLE_API_KEY=your_gemini_key  # Optional for try-on
 The backend is deployed on Google Cloud Run for scalability and cost-effectiveness:
 
 ```bash
-# Build with caching
+# Option 1: Use the deployment script (recommended)
+cd backend
+./deploy.sh
+
+# Option 2: Manual deployment
+# Build with caching (ALWAYS use this for fast builds)
 cd backend
 gcloud builds submit --config cloudbuild.yaml
 
@@ -149,11 +170,33 @@ gcloud run deploy kapdaai-backend \
   --region us-central1 \
   --memory 8Gi \
   --timeout 540 \
-  --allow-unauthenticated
+  --allow-unauthenticated \
+  --update-secrets="REPLICATE_API_TOKEN=replicate-api-token:latest,FAL_KEY=fal-api-key:latest,GOOGLE_API_KEY=gemini-api-key:latest"
+```
+
+### Setting up Secrets in Google Secret Manager
+
+```bash
+# Create secrets if they don't exist
+echo -n "your-replicate-token" | gcloud secrets create replicate-api-token --data-file=-
+echo -n "your-fal-key" | gcloud secrets create fal-api-key --data-file=-
+echo -n "your-gemini-key" | gcloud secrets create gemini-api-key --data-file=-
+
+# Update existing secrets
+echo -n "new-replicate-token" | gcloud secrets versions add replicate-api-token --data-file=-
+echo -n "new-fal-key" | gcloud secrets versions add fal-api-key --data-file=-
+echo -n "new-gemini-key" | gcloud secrets versions add gemini-api-key --data-file=-
+
+# Grant Cloud Run service account access to secrets
+SERVICE_ACCOUNT="560568328203-compute@developer.gserviceaccount.com"
+gcloud secrets add-iam-policy-binding replicate-api-token --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/secretmanager.secretAccessor"
+gcloud secrets add-iam-policy-binding fal-api-key --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/secretmanager.secretAccessor"
+gcloud secrets add-iam-policy-binding gemini-api-key --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/secretmanager.secretAccessor"
 ```
 
 Features:
-- **Docker Layer Caching**: Fast rebuilds with cloudbuild.yaml
+- **Docker Layer Caching**: Fast rebuilds with cloudbuild.yaml (saves 10-15 minutes)
 - **8GB Memory**: Handles large models (CLIP, MediaPipe)
 - **Auto-scaling**: Scales to zero when not in use
 - **Environment**: Uses Google Secret Manager for API keys
+- **SAM2 Service**: Modular architecture with proper mask format conversion
