@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Starting KapdaAI with Firebase Local..."
+echo "Starting KapdaAI Production Mode..."
 echo "========================================"
 echo ""
 
@@ -17,23 +17,20 @@ trap cleanup EXIT INT TERM
 
 # Clean up any existing processes on required ports
 echo "Cleaning up existing processes on ports..."
-lsof -ti:3000,4000,4400,4500,5001,9099,9199 | xargs kill -9 2>/dev/null || true
+lsof -ti:3000,5001 | xargs kill -9 2>/dev/null || true
 sleep 2
-
-# Start Firebase emulators in background with data persistence
-echo "Starting Firebase Emulators..."
-firebase emulators:start --only auth,storage --import=./firebase-data --export-on-exit &
-FIREBASE_PID=$!
-
-# Wait for Firebase to start
-echo "Waiting for Firebase to initialize..."
-sleep 8
 
 # Start Flask backend
 echo ""
 echo "Starting Flask backend..."
 source /Users/mukulpathak/PROJECTS/KapdaAI/kapdaai/bin/activate
-cd backend && python flask_api.py &
+
+# Kill any existing Flask processes first
+echo "Killing any existing Flask processes..."
+pkill -f flask_api.py || true
+sleep 2
+
+cd backend && python flask_api.py 2>&1 | tee flask.log &
 FLASK_PID=$!
 
 # Start React frontend
@@ -46,9 +43,12 @@ echo ""
 echo "========================================"
 echo "All services started!"
 echo ""
-echo "Firebase Emulator UI: http://localhost:4000"
 echo "React App: http://localhost:3000"
 echo "Flask API: http://localhost:5001"
+echo ""
+echo "NOTE: Using production Firebase. Make sure you have:"
+echo "1. serviceAccountKey.json in the project root"
+echo "2. .env file with GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json"
 echo ""
 echo "Press Ctrl+C to stop all services"
 echo "========================================"

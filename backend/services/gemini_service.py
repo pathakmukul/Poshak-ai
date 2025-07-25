@@ -239,9 +239,10 @@ class GeminiService:
             mask_img_data = base64.b64decode(mask_image.split(',')[1])
             mask_pil = Image.open(BytesIO(mask_img_data))  # Keep as RGBA
             
-            # Load garment image
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            garment_path = os.path.join(base_dir, 'data', 'sample_images', 'garments', garment_file)
+            # Load garment image - look in parent directory (react-app)
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            parent_dir = os.path.dirname(backend_dir)  # react-app directory
+            garment_path = os.path.join(parent_dir, 'data', 'sample_images', 'garments', garment_file)
             garment_pil = Image.open(garment_path).convert('RGB')
             
             # Create prompt - EXACT SAME AS streamlit_app.py

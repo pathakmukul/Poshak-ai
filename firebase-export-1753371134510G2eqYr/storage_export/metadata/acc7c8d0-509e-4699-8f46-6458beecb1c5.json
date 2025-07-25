@@ -1,0 +1,19 @@
+{
+  "name": "users/rm1lyqky201zsuLoV7tB7ytRyoBL/masks/1753342315820_boywb/masks.json",
+  "bucket": "kapdaai-local.appspot.com",
+  "metageneration": 1,
+  "generation": 1753342315977,
+  "contentType": "application/json",
+  "storageClass": "STANDARD",
+  "contentDisposition": "inline",
+  "downloadTokens": [
+    "01478be0-9552-4cc3-85f0-2f906bd7660f"
+  ],
+  "etag": "EIfrJTSlui1qLKnMP+k2T8I7gE8",
+  "customMetadata": {},
+  "timeCreated": "2025-07-24T07:31:55.977Z",
+  "updated": "2025-07-24T07:31:55.977Z",
+  "size": 8017284,
+  "md5Hash": "RDeYEHuqyXbeIaVPr/PzMg==",
+  "crc32c": "1949004312"
+}

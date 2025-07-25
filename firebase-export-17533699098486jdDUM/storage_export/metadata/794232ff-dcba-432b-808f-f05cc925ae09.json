@@ -1,0 +1,19 @@
+{
+  "name": "users/rm1lyqky201zsuLoV7tB7ytRyoBL/masks/1753342287824_Gemini_Generated_Image_kn8690kn8690kn86/masks.json",
+  "bucket": "kapdaai-local.appspot.com",
+  "metageneration": 1,
+  "generation": 1753342288148,
+  "contentType": "application/json",
+  "storageClass": "STANDARD",
+  "contentDisposition": "inline",
+  "downloadTokens": [
+    "4d9f1731-ea00-4948-a803-6cf37081c9e9"
+  ],
+  "etag": "xPtUtORvh/Bj3ZYmGsFK3RYO/aE",
+  "customMetadata": {},
+  "timeCreated": "2025-07-24T07:31:28.148Z",
+  "updated": "2025-07-24T07:31:28.148Z",
+  "size": 33136785,
+  "md5Hash": "jY8K1ldrqHfmBH2XsZq3ZA==",
+  "crc32c": "1700176327"
+}

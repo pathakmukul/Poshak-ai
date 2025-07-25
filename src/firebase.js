@@ -1,15 +1,15 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
-// Firebase configuration for local development
+// Firebase configuration for PoshakAI production
 const firebaseConfig = {
-  apiKey: "fake-api-key",
-  authDomain: "localhost",
-  projectId: "kapdaai-local",
-  storageBucket: "kapdaai-local.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456"
+  apiKey: "AIzaSyCsKGTED7HNVO35Ky0ms5O49w4KRmJlw7Y",
+  authDomain: "poshakai.firebaseapp.com",
+  projectId: "poshakai",
+  storageBucket: "poshakai.appspot.com",
+  messagingSenderId: "560568328203",
+  appId: "1:560568328203:web:YOUR_APP_ID" // You'll need to get this from Firebase Console
 };
 
 // Initialize Firebase
@@ -19,24 +19,13 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Connect to emulators if in development
-if (process.env.NODE_ENV === 'development') {
-  // Check if emulators are already connected
-  if (!auth.emulatorConfig) {
-    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-  }
-  if (!storage._delegate?._host?.includes('localhost')) {
-    connectStorageEmulator(storage, 'localhost', 9199);
-  }
-}
-
-// Dummy users configuration
+// Test users configuration
 export const DUMMY_USERS = [
-  { email: 'john.doe@kapdaai.local', password: 'password123', displayName: 'John Doe' },
-  { email: 'jane.smith@kapdaai.local', password: 'password123', displayName: 'Jane Smith' },
-  { email: 'test.user@kapdaai.local', password: 'password123', displayName: 'Test User' },
-  { email: 'fashion.designer@kapdaai.local', password: 'password123', displayName: 'Fashion Designer' },
-  { email: 'demo.account@kapdaai.local', password: 'password123', displayName: 'Demo Account' }
+  { email: 'john.doe@poshakai.test', password: 'password123', displayName: 'John Doe' },
+  { email: 'jane.smith@poshakai.test', password: 'password123', displayName: 'Jane Smith' },
+  { email: 'test.user@poshakai.test', password: 'password123', displayName: 'Test User' },
+  { email: 'fashion.designer@poshakai.test', password: 'password123', displayName: 'Fashion Designer' },
+  { email: 'demo.account@poshakai.test', password: 'password123', displayName: 'Demo Account' }
 ];
 
 // Helper function to create dummy users in emulator

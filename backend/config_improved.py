@@ -1,12 +1,15 @@
 """
-Improved configuration for SAM2 - optimized for clothing segmentation
+Configuration for KapdaAI - Segformer-based clothing detection
 """
 
-# SAM2 configuration moved to services/sam2_service.py
+# Segformer configuration
+SEGFORMER_CONFIG = {
+    "model": "mattmdjaga/segformer_b2_clothes",
+    "use_gpu": True,  # Use GPU if available (MPS on Apple Silicon)
+    "min_mask_area": 100,  # Minimum area for a valid mask in pixels
+}
 
-# Removed SigLIP config - using CLIP only
-
-# Classification thresholds
+# Classification thresholds (for backward compatibility with mask editing)
 CLASSIFICATION_CONFIG = {
     "shirt_max_y": 0.6,
     "pants_min_y": 0.4,
@@ -16,26 +19,10 @@ CLASSIFICATION_CONFIG = {
     "max_shoe_area": 10000,
 }
 
-# Performance config removed - not used
-
-# Person extraction configuration
-PERSON_EXTRACTION_CONFIG = {
-    "use_person_extraction": True,  # Enable MediaPipe person extraction
-    "padding_percent": 10,  # Padding around detected person
-    "model_selection": 1,  # 0 for general, 1 for landscape (better for full body)
-}
-
 # Debug options
 DEBUG_CONFIG = {
     "save_intermediate_images": False,
     "print_all_scores": False,
     "timing_details": True,
     "print_mask_stats": True,
-    "use_clip_instead": True,
-}
-
-# SAM2 Provider configuration
-SAM2_PROVIDER_CONFIG = {
-    "provider": "fal",  # Options: "replicate" or "fal"
-    "fal_endpoint": "https://fal.run/fal-ai/sam2/auto-segment"
 }

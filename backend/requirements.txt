@@ -1,10 +1,8 @@
 flask
 flask-cors
-replicate
 python-dotenv
 requests
 google-generativeai
-mediapipe
 gunicorn
 opencv-python
 numpy
@@ -12,3 +10,4 @@ Pillow
 torch
 torchvision
 transformers
+firebase-admin

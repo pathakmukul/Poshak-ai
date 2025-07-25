@@ -50,7 +50,7 @@ function Closet({ user, onBack }) {
               <div key={item.id || index} className="clothing-item">
                 <div className="item-image-wrapper">
                   <img 
-                    src={`data:image/png;base64,${item.image}`} 
+                    src={item.image} 
                     alt={`${item.type} ${index + 1}`}
                     className="item-image"
                   />

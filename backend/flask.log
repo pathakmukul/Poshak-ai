@@ -1,0 +1,632 @@
+MPS (Metal Performance Shaders) is available!
+Using Apple Silicon GPU acceleration
+============================================================
+🔧 SEGFORMER MODE: LOCAL MODEL
+   USE_HF_API environment variable: false
+============================================================
+💻 Using local Segformer model
+ * Serving Flask app 'flask_api'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.122:5001
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 491-127-106
+192.168.1.251 - - [25/Jul/2025 02:00:43] "GET /firebase/images/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Device set to use mps
+/Users/mukulpathak/PROJECTS/KapdaAI/react-app/backend/flask_api.py:335: DeprecationWarning: 'mode' parameter is deprecated and will be removed in Pillow 13 (2026-10-15)
+  pil_crop = Image.fromarray(cropped, mode='RGBA')
+192.168.1.251 - - [25/Jul/2025 02:01:53] "POST /process HTTP/1.1" 200 -
+192.168.1.251 - - [25/Jul/2025 02:02:02] "POST /process HTTP/1.1" 200 -
+192.168.1.251 - - [25/Jul/2025 02:02:06] "POST /firebase/save-results HTTP/1.1" 200 -
+192.168.1.251 - - [25/Jul/2025 02:02:07] "GET /firebase/images/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -
+192.168.1.251 - - [25/Jul/2025 02:02:22] "GET /firebase/clothing-counts/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -
+MPS (Metal Performance Shaders) is available!
+Using Apple Silicon GPU acceleration
+============================================================
+🔧 SEGFORMER MODE: LOCAL MODEL
+   USE_HF_API environment variable: false
+============================================================
+💻 Using local Segformer model
+Processing base64 image data
+
+=== Processing with Segformer B2 Clothes Model ===
+Loading Segformer B2 Clothes model...
+Segformer model loaded in 0.80s on device: mps
+Processing image of size: (720, 960)
+Segment 2: Hair -> non_clothing (area: 4,482 pixels)
+Segment 3: Upper-clothes -> shirt (area: 61,992 pixels)
+Segment 4: Pants -> pants (area: 39,362 pixels)
+Segment 5: Left-shoe -> shoes (area: 3,702 pixels)
+Segment 6: Right-shoe -> shoes (area: 3,502 pixels)
+Segment 7: Face -> non_clothing (area: 7,743 pixels)
+Segment 8: Left-arm -> non_clothing (area: 2,628 pixels)
+Segment 9: Right-arm -> non_clothing (area: 4,517 pixels)
+Segformer processing completed in 1.47s, found 8 masks
+Generated 8 masks in 1.47 seconds
+  Best shirt: Upper-clothes (area: 61,992)
+  Best pants: Pants (area: 39,362)
+  Left shoe: area 3,702
+  Right shoe: area 3,502
+Filtered to 8 clothing items
+
+Final Detection Summary:
+  Shirts: 1
+  Pants: 1
+  Shoes: 2
+
+Mask Quality Check:
+  Mask 0 (shirt): 61992 pixels (9.0% of image)
+  Mask 1 (pants): 39362 pixels (5.7% of image)
+  Mask 2 (shoes): 3702 pixels (0.5% of image)
+  Mask 3 (shoes): 3502 pixels (0.5% of image)
+  Mask 4 (non_clothing): 7743 pixels (1.1% of image)
+
+[create_closet_visualization] Creating visualization for all
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for all: 4
+    Mask for shirt: 61992 pixels
+    Mask for pants: 39362 pixels
+    Mask for shoes: 3702 pixels
+    Mask for shoes: 3502 pixels
+  Content bounds before padding: x(207,435) y(138,938)
+  Content bounds after padding: x(93,549) y(0,959)
+  Cropping from 720x960 to 457x960
+
+[create_closet_visualization] Creating visualization for shirt
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for shirt: 1
+    Mask for shirt: 61992 pixels
+  Content bounds before padding: x(207,434) y(138,501)
+  Content bounds after padding: x(94,547) y(0,682)
+  Cropping from 720x960 to 454x683
+
+[create_closet_visualization] Creating visualization for pants
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for pants: 1
+    Mask for pants: 39362 pixels
+  Content bounds before padding: x(232,399) y(488,878)
+  Content bounds after padding: x(149,482) y(293,959)
+  Cropping from 720x960 to 334x667
+
+[create_closet_visualization] Creating visualization for shoes
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for shoes: 2
+    Mask for shoes: 3702 pixels
+    Mask for shoes: 3502 pixels
+  Content bounds before padding: x(236,435) y(827,938)
+  Content bounds after padding: x(137,534) y(772,959)
+  Cropping from 720x960 to 398x188
+Processing base64 image data
+
+=== Processing with Segformer B2 Clothes Model ===
+Processing image of size: (720, 960)
+Segment 2: Hair -> non_clothing (area: 4,482 pixels)
+Segment 3: Upper-clothes -> shirt (area: 61,992 pixels)
+Segment 4: Pants -> pants (area: 39,362 pixels)
+Segment 5: Left-shoe -> shoes (area: 3,702 pixels)
+Segment 6: Right-shoe -> shoes (area: 3,502 pixels)
+Segment 7: Face -> non_clothing (area: 7,743 pixels)
+Segment 8: Left-arm -> non_clothing (area: 2,628 pixels)
+Segment 9: Right-arm -> non_clothing (area: 4,517 pixels)
+Segformer processing completed in 0.30s, found 8 masks
+Generated 8 masks in 0.30 seconds
+  Best shirt: Upper-clothes (area: 61,992)
+  Best pants: Pants (area: 39,362)
+  Left shoe: area 3,702
+  Right shoe: area 3,502
+Filtered to 8 clothing items
+
+Final Detection Summary:
+  Shirts: 1
+  Pants: 1
+  Shoes: 2
+
+Mask Quality Check:
+  Mask 0 (shirt): 61992 pixels (9.0% of image)
+  Mask 1 (pants): 39362 pixels (5.7% of image)
+  Mask 2 (shoes): 3702 pixels (0.5% of image)
+  Mask 3 (shoes): 3502 pixels (0.5% of image)
+  Mask 4 (non_clothing): 7743 pixels (1.1% of image)
+
+[create_closet_visualization] Creating visualization for all
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for all: 4
+    Mask for shirt: 61992 pixels
+    Mask for pants: 39362 pixels
+    Mask for shoes: 3702 pixels
+    Mask for shoes: 3502 pixels
+  Content bounds before padding: x(207,435) y(138,938)
+  Content bounds after padding: x(93,549) y(0,959)
+  Cropping from 720x960 to 457x960
+
+[create_closet_visualization] Creating visualization for shirt
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for shirt: 1
+    Mask for shirt: 61992 pixels
+  Content bounds before padding: x(207,434) y(138,501)
+  Content bounds after padding: x(94,547) y(0,682)
+  Cropping from 720x960 to 454x683
+
+[create_closet_visualization] Creating visualization for pants
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for pants: 1
+    Mask for pants: 39362 pixels
+  Content bounds before padding: x(232,399) y(488,878)
+  Content bounds after padding: x(149,482) y(293,959)
+  Cropping from 720x960 to 334x667
+
+[create_closet_visualization] Creating visualization for shoes
+  Image dimensions: 720x960
+  Total masks received: 8
+  Filtered masks for shoes: 2
+    Mask for shoes: 3702 pixels
+    Mask for shoes: 3502 pixels
+  Content bounds before padding: x(236,435) y(827,938)
+  Content bounds after padding: x(137,534) y(772,959)
+  Cropping from 720x960 to 398x188
+
+[save_processed_results] Saving closet visualizations:
+  all: 92340 chars
+  pants: 56980 chars
+  shirt: 89208 chars
+  shoes: 22852 chars
+
+=== DEBUG: Getting clothing items for user: omXo3iWdEeTCbCusQVIvIAeSaGG2 ===
+  Found 13 images for user
+
+Processing image: 1753434124591_mobile
+192.168.1.251 - - [25/Jul/2025 02:02:23] "GET /firebase/clothing-counts/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -
+
+=== DEBUG: Getting clothing items for user: omXo3iWdEeTCbCusQVIvIAeSaGG2 ===
+  Found 13 images for user
+
+Processing image: 1753434124591_mobile
+
+  Processing shirt image for 1753434124591_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAVQAAAIACAYAAADdZZTJAAEAAElEQVR42uz9ebxl6XnXh37fYQ177zPX1FXVkyRbkrslgyUPMYFY
+  Using closet viz: True
+  Content bounds: {'height': 960, 'maxX': 434, 'maxY': 501, 'minX': 207, 'minY': 138, 'width': 720}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVQAAAIACAYAAADdZZTJAAEAAElEQVR42uz9ebxl6XnXh37fYQ177z
+  Final image length: 89230 chars
+
+  Processing pants image for 1753434124591_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAQAAAAIACAYAAABtmrL7AACmtUlEQVR42uz9ebxk2VUeiH5r7X3OiYg75ZyVNVepNGVJCJFGEgiT
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAIACAYAAABtmrL7AACmtUlEQVR42uz9ebxk2VUeiH5r7X3OiY
+
+  Processing shoes image for 1753434124591_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAY4AAAC8CAYAAABvwUluAABCuklEQVR42u29ebSs2Vmf9+y9v7HGM9156L59W92toTU0gxBCSAxe
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAY4AAAC8CAYAAABvwUluAABCuklEQVR42u29ebSs2Vmf9+y9v7HGM9
+
+Processing image: 1753427239733_mobile
+
+  Processing shirt image for 1753434124591_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAVQAAAIACAYAAADdZZTJAAEAAElEQVR42uz9ebxl6XnXh37fYQ177zPX1FXVkyRbkrslgyUPMYFY
+  Using closet viz: True
+  Content bounds: {'height': 960, 'maxX': 434, 'maxY': 501, 'minX': 207, 'minY': 138, 'width': 720}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVQAAAIACAYAAADdZZTJAAEAAElEQVR42uz9ebxl6XnXh37fYQ177z
+  Final image length: 89230 chars
+
+  Processing pants image for 1753434124591_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAQAAAAIACAYAAABtmrL7AACmtUlEQVR42uz9ebxk2VUeiH5r7X3OiYg75ZyVNVepNGVJCJFGEgiT
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAIACAYAAABtmrL7AACmtUlEQVR42uz9ebxk2VUeiH5r7X3OiY
+
+  Processing shoes image for 1753434124591_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAY4AAAC8CAYAAABvwUluAABCuklEQVR42u29ebSs2Vmf9+y9v7HGM9156L59W92toTU0gxBCSAxe
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAY4AAAC8CAYAAABvwUluAABCuklEQVR42u29ebSs2Vmf9+y9v7HGM9
+
+Processing image: 1753427239733_mobile
+
+  Processing shirt image for 1753427239733_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAV8AAAIACAYAAAAlhW8+AAEAAElEQVR42uzdd5xf11ng/8+59dvbfKc39W7HtlwTJ7LSiwkQkGgb
+  Using closet viz: True
+  Content bounds: {'height': 960, 'maxX': 434, 'maxY': 483, 'minX': 209, 'minY': 138, 'width': 720}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAV8AAAIACAYAAAAlhW8+AAEAAElEQVR42uzdd5xf11ng/8+59dvbfK
+  Final image length: 118250 chars
+
+  Processing pants image for 1753427239733_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAANoAAAIACAYAAADkJ3K7AADoD0lEQVR42uzdd3hlV3no/+/a7ezTq466NKPpmuIi94LGYNNLgGgo
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANoAAAIACAYAAADkJ3K7AADoD0lEQVR42uzdd3hlV3no/+/a7ezTq4
+
+  Processing shoes image for 1753427239733_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAZ4AAADbCAYAAABdnvdkAABYw0lEQVR42u39eZxlWV7Xe3/W2vPeZ445IiMjx8rKmpqim54YZBCv
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZ4AAADbCAYAAABdnvdkAABYw0lEQVR42u39eZxlWV7Xe3/W2vPeZ4
+
+Processing image: 1753426927637_mobile
+
+  Processing shirt image for 1753427239733_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAV8AAAIACAYAAAAlhW8+AAEAAElEQVR42uzdd5xf11ng/8+59dvbfKc39W7HtlwTJ7LSiwkQkGgb
+  Using closet viz: True
+  Content bounds: {'height': 960, 'maxX': 434, 'maxY': 483, 'minX': 209, 'minY': 138, 'width': 720}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAV8AAAIACAYAAAAlhW8+AAEAAElEQVR42uzdd5xf11ng/8+59dvbfK
+  Final image length: 118250 chars
+
+  Processing pants image for 1753427239733_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAANoAAAIACAYAAADkJ3K7AADoD0lEQVR42uzdd3hlV3no/+/a7ezTq466NKPpmuIi94LGYNNLgGgo
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANoAAAIACAYAAADkJ3K7AADoD0lEQVR42uzdd3hlV3no/+/a7ezTq4
+
+  Processing shoes image for 1753427239733_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAZ4AAADbCAYAAABdnvdkAABYw0lEQVR42u39eZxlWV7Xe3/W2vPeZ445IiMjx8rKmpqim54YZBCv
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZ4AAADbCAYAAABdnvdkAABYw0lEQVR42u39eZxlWV7Xe3/W2vPeZ4
+
+Processing image: 1753426927637_mobile
+
+  Processing shirt image for 1753426927637_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAaoAAAIACAYAAADT4CjjAAEAAElEQVR42uz9edyt13UWCD5r7f2ec77vu6Pu1WhLthzPiUkchdgZ
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 679, 'maxY': 552, 'minX': 379, 'minY': 191, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAaoAAAIACAYAAADT4CjjAAEAAElEQVR42uz9edyt13UWCD5r7f2ec7
+  Final image length: 109610 chars
+
+  Processing pants image for 1753426927637_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAU0AAAIACAYAAAAG3j7rAAEAAElEQVR42uz9e7SuWVbWCf7mXGu97/ftfU6ciMjIG5ncUSABRQIv
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAU0AAAIACAYAAAAG3j7rAAEAAElEQVR42uz9e7SuWVbWCf7mXGu97/
+
+  Processing shoes image for 1753426927637_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAcIAAACyCAYAAADRTc8wAABGo0lEQVR42u39ebSn2VnY93738A6/8Ux1Ts3V89zqUa1ZQgJkYmzA
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcIAAACyCAYAAADRTc8wAABGo0lEQVR42u39ebSn2VnY93738A6/8U
+
+Processing image: 1753426652725_mobile
+
+  Processing shirt image for 1753426927637_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAaoAAAIACAYAAADT4CjjAAEAAElEQVR42uz9edyt13UWCD5r7f2ec77vu6Pu1WhLthzPiUkchdgZ
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 679, 'maxY': 552, 'minX': 379, 'minY': 191, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAaoAAAIACAYAAADT4CjjAAEAAElEQVR42uz9edyt13UWCD5r7f2ec7
+  Final image length: 109610 chars
+
+  Processing pants image for 1753426927637_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAU0AAAIACAYAAAAG3j7rAAEAAElEQVR42uz9e7SuWVbWCf7mXGu97/ftfU6ciMjIG5ncUSABRQIv
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAU0AAAIACAYAAAAG3j7rAAEAAElEQVR42uz9e7SuWVbWCf7mXGu97/
+
+  Processing shoes image for 1753426927637_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAcIAAACyCAYAAADRTc8wAABGo0lEQVR42u39ebSn2VnY93738A6/8Ux1Ts3V89zqUa1ZQgJkYmzA
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcIAAACyCAYAAADRTc8wAABGo0lEQVR42u39ebSn2VnY93738A6/8U
+
+Processing image: 1753426652725_mobile
+
+  Processing shirt image for 1753426652725_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAeIAAAIACAYAAABejW+3AAEAAElEQVR42uz9e7it6VUXiP7GGO8351r7Xrtq1y1VSVUllYQkRqSi
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 640, 'maxY': 484, 'minX': 383, 'minY': 212, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeIAAAIACAYAAABejW+3AAEAAElEQVR42uz9e7it6VUXiP7GGO8351
+  Final image length: 97110 chars
+
+  Processing pants image for 1753426652725_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAPUAAAIACAYAAABacSrmAADTrElEQVR42uz9e7CtWXIXBv4yc63v2/ucc1/17Kp+VL/ULbVagLiS
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPUAAAIACAYAAABacSrmAADTrElEQVR42uz9e7CtWXIXBv4yc63v2/
+
+  Processing shoes image for 1753426652725_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAYoAAACVCAYAAABGib3qAABL0UlEQVR42u39edRu2VXeh/7mavZ++685bVWdqpJUVWqQBEJNJCEs
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYoAAACVCAYAAABGib3qAABL0UlEQVR42u39edRu2VXeh/7mavZ++6
+
+Processing image: 1753426195692_mobile
+
+  Processing shirt image for 1753426652725_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAeIAAAIACAYAAABejW+3AAEAAElEQVR42uz9e7it6VUXiP7GGO8351r7Xrtq1y1VSVUllYQkRqSi
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 640, 'maxY': 484, 'minX': 383, 'minY': 212, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeIAAAIACAYAAABejW+3AAEAAElEQVR42uz9e7it6VUXiP7GGO8351
+  Final image length: 97110 chars
+
+  Processing pants image for 1753426652725_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAPUAAAIACAYAAABacSrmAADTrElEQVR42uz9e7CtWXIXBv4yc63v2/ucc1/17Kp+VL/ULbVagLiS
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPUAAAIACAYAAABacSrmAADTrElEQVR42uz9e7CtWXIXBv4yc63v2/
+
+  Processing shoes image for 1753426652725_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAYoAAACVCAYAAABGib3qAABL0UlEQVR42u39edRu2VXeh/7mavZ++685bVWdqpJUVWqQBEJNJCEs
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYoAAACVCAYAAABGib3qAABL0UlEQVR42u39edRu2VXeh/7mavZ++6
+
+Processing image: 1753426195692_mobile
+
+  Processing shirt image for 1753426195692_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAGfCAYAAABRBdvkAAAWIklEQVR42u3de6zt6VkX8O/z/n5rrb3POTPTmXZmpD22tqVYLyBl
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 697, 'maxY': 431, 'minX': 299, 'minY': 0, 'width': 1023}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAGfCAYAAABRBdvkAAAWIklEQVR42u3de6zt6VkX8O/z/n5rrb
+  Final image length: 7654 chars
+
+  Processing pants image for 1753426195692_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAFkCAYAAABW9YMrAAC1N0lEQVR42uz9ebyk13XXC//W2vt5qurMPaqlbqnbUtuS22PScRJn
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAFkCAYAAABW9YMrAAC1N0lEQVR42uz9ebyk13XXC//W2vt5qu
+
+  Processing shoes image for 1753426195692_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAFVCAYAAACZ01cjAABLhUlEQVR42u3deZRl91Uf+u/evzPce2vseZDklqWWZbVHkPGEcTMk
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAFVCAYAAACZ01cjAABLhUlEQVR42u3deZRl91Uf+u/evzPce2
+
+Processing image: 1753426090807_mobile
+
+  Processing shirt image for 1753426195692_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAGfCAYAAABRBdvkAAAWIklEQVR42u3de6zt6VkX8O/z/n5rrb3POTPTmXZmpD22tqVYLyBl
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 697, 'maxY': 431, 'minX': 299, 'minY': 0, 'width': 1023}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAGfCAYAAABRBdvkAAAWIklEQVR42u3de6zt6VkX8O/z/n5rrb
+  Final image length: 7654 chars
+
+  Processing pants image for 1753426195692_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAFkCAYAAABW9YMrAAC1N0lEQVR42uz9ebyk13XXC//W2vt5qurMPaqlbqnbUtuS22PScRJn
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAFkCAYAAABW9YMrAAC1N0lEQVR42uz9ebyk13XXC//W2vt5qu
+
+  Processing shoes image for 1753426195692_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAFVCAYAAACZ01cjAABLhUlEQVR42u3deZRl91Uf+u/evzPce2vseZDklqWWZbVHkPGEcTMk
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAFVCAYAAACZ01cjAABLhUlEQVR42u3deZRl91Uf+u/evzPce2
+
+Processing image: 1753426090807_mobile
+192.168.1.251 - - [25/Jul/2025 02:02:25] "GET /firebase/images/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -
+
+  Processing shirt image for 1753426090807_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAdMAAAIACAYAAADZvIaxAAEAAElEQVR42uz9ebxl11nfCX/XsPc+453vrXmu0lCy5rJl2ZYtecJ4
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 768, 'maxY': 632, 'minX': 366, 'minY': 133, 'width': 1023}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdMAAAIACAYAAADZvIaxAAEAAElEQVR42uz9ebxl11nfCX/XsPc+45
+  Final image length: 119858 chars
+
+  Processing pants image for 1753426090807_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAYQAAAIACAYAAACCdBuAAADhTklEQVR42uz9eZilV30djK49vMMZa66e1RpaLak1INESRkzNdBG2
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYQAAAIACAYAAACCdBuAAADhTklEQVR42uz9eZilV30djK49vMMZa6
+
+  Processing shoes image for 1753426090807_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAVoAAAE3CAYAAADrO4nyAACE0ElEQVR42uz9ebxm2V3eh37X2vM7nXmoc2rqmrq7elCrW2ohCYHQ
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVoAAAE3CAYAAADrO4nyAACE0ElEQVR42uz9ebxm2V3eh37X2vM7nX
+
+Processing image: 1753425551684_mobile
+
+  Processing shirt image for 1753426090807_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAdMAAAIACAYAAADZvIaxAAEAAElEQVR42uz9ebxl11nfCX/XsPc+453vrXmu0lCy5rJl2ZYtecJ4
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 768, 'maxY': 632, 'minX': 366, 'minY': 133, 'width': 1023}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdMAAAIACAYAAADZvIaxAAEAAElEQVR42uz9ebxl11nfCX/XsPc+45
+  Final image length: 119858 chars
+
+  Processing pants image for 1753426090807_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAYQAAAIACAYAAACCdBuAAADhTklEQVR42uz9eZilV30djK49vMMZa66e1RpaLak1INESRkzNdBG2
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYQAAAIACAYAAACCdBuAAADhTklEQVR42uz9eZilV30djK49vMMZa6
+
+  Processing shoes image for 1753426090807_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAVoAAAE3CAYAAADrO4nyAACE0ElEQVR42uz9ebxm2V3eh37X2vM7nXmoc2rqmrq7elCrW2ohCYHQ
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVoAAAE3CAYAAADrO4nyAACE0ElEQVR42uz9ebxm2V3eh37X2vM7nX
+
+Processing image: 1753425551684_mobile
+
+  Processing shirt image for 1753425551684_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAWsAAAGlCAYAAAA8pNe8AAEAAElEQVR42uz9ebRl6XnWCf72PJ55uHPMEZkZmcpZsqaUbMsyxnaD
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 648, 'maxY': 539, 'minX': 324, 'minY': 157, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWsAAAGlCAYAAAA8pNe8AAEAAElEQVR42uz9ebRl6XnWCf72PJ55uH
+  Final image length: 247006 chars
+
+  Processing pants image for 1753425551684_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAQQAAAIACAYAAABkcRKBAAEAAElEQVR42uz9ebBl2VkfiP7WtIdzzr03b85ZVapJWRpKEkgqDQiE
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAIACAYAAABkcRKBAAEAAElEQVR42uz9ebBl2VkfiP7WtIdzzr
+
+  Processing shoes image for 1753425551684_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAO4AAABsCAYAAABtlo7xAABZ8klEQVR42u39d5hl53Xeif6+nffJp+pUDp3RjQYaOZIAEwgCDDKT
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAO4AAABsCAYAAABtlo7xAABZ8klEQVR42u39d5hl53Xeif6+nffJp+
+
+Processing image: 1753424587126_mobile
+
+  Processing shirt image for 1753425551684_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAWsAAAGlCAYAAAA8pNe8AAEAAElEQVR42uz9ebRl6XnWCf72PJ55uHPMEZkZmcpZsqaUbMsyxnaD
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 648, 'maxY': 539, 'minX': 324, 'minY': 157, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWsAAAGlCAYAAAA8pNe8AAEAAElEQVR42uz9ebRl6XnWCf72PJ55uH
+  Final image length: 247006 chars
+
+  Processing pants image for 1753425551684_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAQQAAAIACAYAAABkcRKBAAEAAElEQVR42uz9ebBl2VkfiP7WtIdzzr03b85ZVapJWRpKEkgqDQiE
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAIACAYAAABkcRKBAAEAAElEQVR42uz9ebBl2VkfiP7WtIdzzr
+
+  Processing shoes image for 1753425551684_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAO4AAABsCAYAAABtlo7xAABZ8klEQVR42u39d5hl53Xeif6+nffJp+pUDp3RjQYaOZIAEwgCDDKT
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAO4AAABsCAYAAABtlo7xAABZ8klEQVR42u39d5hl53Xeif6+nffJp+
+
+Processing image: 1753424587126_mobile
+
+  Processing shirt image for 1753424587126_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAdAAAAIACAYAAAAyiz2yAAEAAElEQVR42uz9ebhl11kfCP/WsPc599YklaRSabBky7KGki0PJU/y
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 596, 'maxY': 908, 'minX': 51, 'minY': 301, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdAAAAIACAYAAAAyiz2yAAEAAElEQVR42uz9ebhl11kfCP/WsPc599
+  Final image length: 121690 chars
+
+  Processing pants image for 1753424587126_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAF3CAYAAADTt/MeAAEAAElEQVR42uy9eaBlV1Um/q09nHPu8IaaK5WEhDBpBW00CC0ORRSZ
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAF3CAYAAADTt/MeAAEAAElEQVR42uy9eaBlV1Um/q09nHPu8I
+
+  Processing shoes image for 1753424587126_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAANQAAADNCAYAAADAB15LAABt5UlEQVR42u39d7ykyXnfh36r6k0dTj5n8szmCCyAXSSSWJCIBAmC
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANQAAADNCAYAAADAB15LAABt5UlEQVR42u39d7ykyXnfh36r6k0dTj
+
+Processing image: 1753423855103_mobile
+
+  Processing shirt image for 1753424587126_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAdAAAAIACAYAAAAyiz2yAAEAAElEQVR42uz9ebhl11kfCP/WsPc599YklaRSabBky7KGki0PJU/y
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 596, 'maxY': 908, 'minX': 51, 'minY': 301, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAdAAAAIACAYAAAAyiz2yAAEAAElEQVR42uz9ebhl11kfCP/WsPc599
+  Final image length: 121690 chars
+
+  Processing pants image for 1753424587126_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAF3CAYAAADTt/MeAAEAAElEQVR42uy9eaBlV1Um/q09nHPu8IaaK5WEhDBpBW00CC0ORRSZ
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAF3CAYAAADTt/MeAAEAAElEQVR42uy9eaBlV1Um/q09nHPu8I
+
+  Processing shoes image for 1753424587126_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAANQAAADNCAYAAADAB15LAABt5UlEQVR42u39d7ykyXnfh36r6k0dTj5n8szmCCyAXSSSWJCIBAmC
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANQAAADNCAYAAADAB15LAABt5UlEQVR42u39d7ykyXnfh36r6k0dTj
+
+Processing image: 1753423855103_mobile
+
+  Processing shirt image for 1753423855103_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAcMAAAGeCAYAAADolmr3AAEAAElEQVR42uz9abRtx3Uehn5Vq93dOee2uAAJgiQAoiUIgJ1IWuwk
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 761, 'maxY': 512, 'minX': 351, 'minY': 139, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcMAAAGeCAYAAADolmr3AAEAAElEQVR42uz9abRtx3Uehn5Vq93dOe
+  Final image length: 112922 chars
+
+  Processing pants image for 1753423855103_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAWAAAAIACAYAAAC8fbaLAAEAAElEQVR42uz9edhd51kfCv+eaQ17fEfN1mDLkzzEsQJxEhIlIYMJ
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWAAAAIACAYAAAC8fbaLAAEAAElEQVR42uz9edhd51kfCv+eaQ17fE
+
+  Processing shoes image for 1753423855103_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAASsAAAFVCAYAAAC3jMkFAAB9t0lEQVR42uz9eZil13Xeh/723t945nNq7q7qEWg0QAAESXDUQEkW
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASsAAAFVCAYAAAC3jMkFAAB9t0lEQVR42uz9eZil13Xeh/723t945n
+
+Processing image: 1753422753021_mobile
+
+  Processing shirt image for 1753423855103_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAcMAAAGeCAYAAADolmr3AAEAAElEQVR42uz9abRtx3Uehn5Vq93dOee2uAAJgiQAoiUIgJ1IWuwk
+  Using closet viz: True
+  Content bounds: {'height': 1024, 'maxX': 761, 'maxY': 512, 'minX': 351, 'minY': 139, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcMAAAGeCAYAAADolmr3AAEAAElEQVR42uz9abRtx3Uehn5Vq93dOe
+  Final image length: 112922 chars
+
+  Processing pants image for 1753423855103_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAWAAAAIACAYAAAC8fbaLAAEAAElEQVR42uz9edhd51kfCv+eaQ17fEfN1mDLkzzEsQJxEhIlIYMJ
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWAAAAIACAYAAAC8fbaLAAEAAElEQVR42uz9edhd51kfCv+eaQ17fE
+
+  Processing shoes image for 1753423855103_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAASsAAAFVCAYAAAC3jMkFAAB9t0lEQVR42uz9eZil13Xeh/723t945nNq7q7qEWg0QAAESXDUQEkW
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASsAAAFVCAYAAAC3jMkFAAB9t0lEQVR42uz9eZil13Xeh/723t945n
+
+Processing image: 1753422753021_mobile
+
+  Processing shirt image for 1753422753021_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABkx0lEQVR42u39ebSd933f975/z7znffaZcDBPBECA4KyJEgVIFm1Z
+  Using closet viz: True
+  Content bounds: {'height': 3025, 'maxX': 1759, 'maxY': 1896, 'minX': 1279, 'minY': 1028, 'width': 3024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABkx0lEQVR42u39ebSd933f975/z7znff
+  Final image length: 34498 chars
+
+  Processing pants image for 1753422753021_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABekklEQVR42u39ebim91kfeH7v3/I8z7ucrfbSYkmWbNklbAwmgFl8
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABekklEQVR42u39ebim91kfeH7v3/I8z7
+
+  Processing shoes image for 1753422753021_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAAAZYUlEQVR42u3dabRlZ1kn8Ofde5/hnjvUHapujanKAAmZyFAYIAxV
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAAAZYUlEQVR42u3dabRlZ1kn8Ofde5/hnj
+
+Processing image: 1753422688432_mobile
+
+  Processing shirt image for 1753422753021_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABkx0lEQVR42u39ebSd933f975/z7znffaZcDBPBECA4KyJEgVIFm1Z
+  Using closet viz: True
+  Content bounds: {'height': 3025, 'maxX': 1759, 'maxY': 1896, 'minX': 1279, 'minY': 1028, 'width': 3024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABkx0lEQVR42u39ebSd933f975/z7znff
+  Final image length: 34498 chars
+
+  Processing pants image for 1753422753021_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABekklEQVR42u39ebim91kfeH7v3/I8z7ucrfbSYkmWbNklbAwmgFl8
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAABekklEQVR42u39ebim91kfeH7v3/I8z7
+
+  Processing shoes image for 1753422753021_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAAAZYUlEQVR42u3dabRlZ1kn8Ofde5/hnjvUHapujanKAAmZyFAYIAxV
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAf8AAAIACAYAAACM3WXvAAAZYUlEQVR42u3dabRlZ1kn8Ofde5/hnj
+
+Processing image: 1753422688432_mobile
+
+  Processing shirt image for 1753422688432_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAADuaElEQVR42uy9edxkWVkf/n3OOXep5d17756efQZmBnAYNmXpHgGj
+  Using closet viz: True
+  Content bounds: {'height': 620, 'maxX': 1340, 'maxY': 619, 'minX': 365, 'minY': 75, 'width': 1536}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAADuaElEQVR42uy9edxkWVkf/n3OOXep5d
+  Final image length: 81474 chars
+
+  Processing pants image for 1753422688432_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAAA9KElEQVR42u3de5Tl11Uf+O/e5/x+996q6uqHuiW3/JD8wljGszBC
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAAA9KElEQVR42u3de5Tl11Uf+O/e5/x+99
+
+Processing image: 1753422608469_mobile
+
+  Processing shirt image for 1753422688432_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAADuaElEQVR42uy9edxkWVkf/n3OOXep5d17756efQZmBnAYNmXpHgGj
+  Using closet viz: True
+  Content bounds: {'height': 620, 'maxX': 1340, 'maxY': 619, 'minX': 365, 'minY': 75, 'width': 1536}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAADuaElEQVR42uy9edxkWVkf/n3OOXep5d
+  Final image length: 81474 chars
+
+  Processing pants image for 1753422688432_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAAA9KElEQVR42u3de5Tl11Uf+O/e5/x+996q6uqHuiW3/JD8wljGszBC
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAADOCAYAAABIBboXAAA9KElEQVR42u3de5Tl11Uf+O/e5/x+99
+
+Processing image: 1753422608469_mobile
+
+  Processing shirt image for 1753422608469_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAB94UlEQVR42uz9ebRd13XeiX5zrrX23ufcFj1AsAEhUaRAUr0ty41A
+  Using closet viz: True
+  Content bounds: {'height': 1447, 'maxX': 958, 'maxY': 600, 'minX': 547, 'minY': 241, 'width': 1447}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAB94UlEQVR42uz9ebRd13XeiX5zrrX23u
+  Final image length: 43066 chars
+
+  Processing pants image for 1753422608469_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAD58ElEQVR42uz9ebTnaX7Q972f5bv89rvfW3sv1ct0z0zPrpFGUrUY
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAD58ElEQVR42uz9ebTnaX7Q972f5bv89r
+
+  Processing shoes image for 1753422608469_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAl0UlEQVR42u3dd5Cd13nf8d8573t72bu9oQNEJQEWiEWmzIVINVsU
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAl0UlEQVR42u3dd5Cd13nf8d8573t72b
+
+Processing image: 1753422175503_mobile
+
+  Processing shirt image for 1753422608469_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAB94UlEQVR42uz9ebRd13XeiX5zrrX23ufcFj1AsAEhUaRAUr0ty41A
+  Using closet viz: True
+  Content bounds: {'height': 1447, 'maxX': 958, 'maxY': 600, 'minX': 547, 'minY': 241, 'width': 1447}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAB94UlEQVR42uz9ebRd13XeiX5zrrX23u
+  Final image length: 43066 chars
+
+  Processing pants image for 1753422608469_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAD58ElEQVR42uz9ebTnaX7Q972f5bv89rvfW3sv1ct0z0zPrpFGUrUY
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAD58ElEQVR42uz9ebTnaX7Q972f5bv89r
+
+  Processing shoes image for 1753422608469_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAl0UlEQVR42u3dd5Cd13nf8d8573t72bu9oQNEJQEWiEWmzIVINVsU
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAl0UlEQVR42u3dd5Cd13nf8d8573t72b
+
+Processing image: 1753422175503_mobile
+
+  Processing shirt image for 1753422175503_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAAAxOElEQVR4nO3dS4xk6ZUY5nPvjYh8VVVXdRfZDw6bTdIaGTAwEGwI
+  Using closet viz: True
+  Content bounds: {'height': 1025, 'maxX': 698, 'maxY': 431, 'minX': 299, 'minY': 18, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAAAxOElEQVR4nO3dS4xk6ZUY5nPvjYh8VV
+  Final image length: 16898 chars
+
+  Processing pants image for 1753422175503_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAADeUUlEQVR4nOz915NtaXYY+K29j0tz/a1b3repduhudKPhSIAgSA4J
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAADeUUlEQVR4nOz915NtaXYY+K29j0tz/a
+
+  Processing shoes image for 1753422175503_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAABQNUlEQVR4nO3d+Y9seZYY9HNjyeXt9V69WnuZnm57zOyazSMPGAxY
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAABQNUlEQVR4nO3d+Y9seZYY9HNjyeXt9V
+
+=== DEBUG: Returning 13 shirts, 13 pants, 12 shoes ===
+192.168.1.251 - - [25/Jul/2025 02:02:32] "GET /firebase/clothing-items/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -
+
+  Processing shirt image for 1753422175503_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAAAxOElEQVR4nO3dS4xk6ZUY5nPvjYh8VVVXdRfZDw6bTdIaGTAwEGwI
+  Using closet viz: True
+  Content bounds: {'height': 1025, 'maxX': 698, 'maxY': 431, 'minX': 299, 'minY': 18, 'width': 1024}
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAAAxOElEQVR4nO3dS4xk6ZUY5nPvjYh8VV
+  Final image length: 16898 chars
+
+  Processing pants image for 1753422175503_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAADeUUlEQVR4nOz915NtaXYY+K29j0tz/a1b3repduhudKPhSIAgSA4J
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAADeUUlEQVR4nOz915NtaXYY+K29j0tz/a
+
+  Processing shoes image for 1753422175503_mobile
+  Raw image data (first 100 chars): iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAABQNUlEQVR4nO3d+Y9seZYY9HNjyeXt9V69WnuZnm57zOyazSMPGAxY
+  Processed image data (first 100 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQBCAYAAAC0QfgmAABQNUlEQVR4nO3d+Y9seZYY9HNjyeXt9V
+
+=== DEBUG: Returning 13 shirts, 13 pants, 12 shoes ===
+192.168.1.251 - - [25/Jul/2025 02:02:32] "GET /firebase/clothing-items/omXo3iWdEeTCbCusQVIvIAeSaGG2 HTTP/1.1" 200 -

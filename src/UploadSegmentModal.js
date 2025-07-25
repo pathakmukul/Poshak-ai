@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import './UploadSegmentModal.css';
-import { uploadUserImage, saveMaskData, saveMaskImage } from './storageService';
+// All saves now go through Flask endpoints
 import API_URL from './config';
 
 function UploadSegmentModal({ user, onClose, onSuccess }) {
@@ -38,7 +38,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
     if (!uploadedImage) return;
 
     setProcessing(true);
-    setStatus('Processing with Replicate API (fast mode)...');
+    setStatus('Processing ...');
 
     try {
       // Call Flask API to process segmentation
@@ -185,56 +185,40 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
     setStatus('Saving to wardrobe...');
 
     try {
-      // First, upload the original image to Firebase
-      const uploadResult = await uploadUserImage(user.uid, uploadedImage.file);
-      if (!uploadResult.success) {
-        throw new Error('Failed to upload image');
+      // Generate filename
+      const fileName = `${Date.now()}_${uploadedImage.file.name}`;
+      
+      // Save to Firebase via Flask backend
+      const saveResponse = await fetch('http://localhost:5001/firebase/save-results', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.uid,
+          file_name: fileName,
+          segmentation_results: segmentResults,
+          original_image: uploadedImage.localDataUrl // Use the data URL which includes base64
+        }),
+      });
+
+      if (!saveResponse.ok) {
+        const error = await saveResponse.json();
+        throw new Error(error.error || 'Failed to save results');
       }
 
-      // Save mask data including the visualization images
-      const maskData = {
-        masks: segmentResults.masks,
-        classifications: {
-          shirt: segmentResults.shirt_count,
-          pants: segmentResults.pants_count,
-          shoes: segmentResults.shoes_count
-        },
-        visualizations: {
-          shirt: segmentResults.shirt_img,
-          pants: segmentResults.pants_img,
-          shoes: segmentResults.shoes_img,
-          all: segmentResults.all_items_img
-        },
-        closet_visualizations: segmentResults.closet_visualizations || {},
-        timestamp: new Date().toISOString(),
-        originalImageUrl: uploadResult.downloadURL
-      };
+      const saveResult = await saveResponse.json();
+      console.log('Save result:', saveResult);
 
-      // Use the fileName from uploadResult which includes the timestamp
-      const imageName = uploadResult.fileName.split('.')[0];
-      await saveMaskData(user.uid, imageName, maskData);
-
-      // Save mask images
-      for (const type of ['shirt', 'pants', 'shoes']) {
-        if (segmentResults[`${type}_img`]) {
-          // Convert base64 to blob
-          const base64Data = segmentResults[`${type}_img`];
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'image/png' });
-
-          await saveMaskImage(user.uid, imageName, type, blob);
-        }
+      // Check if save was successful
+      if (saveResult.success) {
+        setStatus('Saved to wardrobe!');
+        setTimeout(() => {
+          onSuccess();
+        }, 1000);
+      } else {
+        throw new Error(saveResult.error || 'Save failed');
       }
-
-      setStatus('Saved to wardrobe!');
-      setTimeout(() => {
-        onSuccess();
-      }, 1000);
     } catch (error) {
       console.error('Save error:', error);
       setStatus('Failed to save. Please try again.');
@@ -356,6 +340,13 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
                   >
                     Shoes ({segmentResults.shoes_count || 0})
                   </button>
+                  <button 
+                    className={`tab ${activeTab === 'person' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('person')}
+                    style={activeTab === 'person' ? { backgroundColor: '#9c27b0' } : {}}
+                  >
+                    Person Only (No BG)
+                  </button>
                 </div>
 
                 {/* Display segmented images */}
@@ -371,6 +362,18 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
                   )}
                   {activeTab === 'shoes' && segmentResults.shoes_img && (
                     <img src={`data:image/png;base64,${segmentResults.shoes_img}`} alt="Shoes" />
+                  )}
+                  {activeTab === 'person' && segmentResults.person_only_img && (
+                    <div>
+                      <img 
+                        src={`data:image/png;base64,${segmentResults.person_only_img}`} 
+                        alt="Person only" 
+                        style={{ backgroundColor: '#f0f0f0', borderRadius: '8px' }}
+                      />
+                      <p style={{ textAlign: 'center', marginTop: '10px', color: '#666' }}>
+                        This is what will be saved to your wardrobe
+                      </p>
+                    </div>
                   )}
                 </div>
 

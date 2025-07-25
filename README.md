@@ -1,26 +1,30 @@
 # KapdaAI - AI-Powered Wardrobe Management
 
-A React + Flask application that uses computer vision to detect, segment, and manage clothing items in your digital wardrobe.
+A full-stack application with React web app, React Native mobile app, and Flask backend that uses computer vision to detect, segment, and manage clothing items in your digital wardrobe.
 
 ## What We're Building
 
-KapdaAI is an intelligent wardrobe management system that automatically detects and categorizes clothing items from photos, allowing users to build and manage their digital wardrobe with AI-powered segmentation, classification, and virtual try-on capabilities.
+KapdaAI is an intelligent wardrobe management system that automatically detects and categorizes clothing items from photos, allowing users to build and manage their digital wardrobe with AI-powered segmentation, classification, and virtual try-on capabilities. Now with a unified architecture where Flask serves as the central API gateway for all Firebase operations, ensuring consistency between web and mobile apps.
 
 ## Features
 
-- **User Authentication**: Firebase-based login system with multi-user support and dummy accounts
-- **Automatic Clothing Detection**: Uses SAM2 (Segment Anything Model 2) via Replicate API for precise clothing segmentation
-- **Smart Classification**: CLIP-based classification for accurate clothing categorization (shirts, pants, shoes)
+### Core Features
+- **User Authentication**: Firebase-based login system with multi-user support
+- **Automatic Clothing Detection**: Uses Segformer B2 Clothes model for precise clothing segmentation and classification in one step
+- **All-in-One AI Model**: Single model that segments and classifies 18 clothing categories (shirts, pants, shoes, dresses, etc.)
 - **Digital Wardrobe**: Personal clothing collection with Firebase storage and detailed item view
-- **Closet View**: NEW! Browse extracted clothing items in a clean grid layout with transparent backgrounds
+- **Closet View**: Browse extracted clothing items in a clean grid layout with transparent backgrounds
 - **Interactive Mask Editing**: Edit and refine AI detections with visual feedback and category-focused editing
 - **Virtual Try-On**: Gemini API integration for AI-powered outfit visualization
-- **Enhanced Segmentation**: Improved SAM2 parameters for better clothing detection (32 points grid, optimized thresholds)
-- **Person Detection**: MediaPipe-based person extraction to reduce background noise before segmentation
-- **Transparent Backgrounds**: All cropped clothing items now have transparent backgrounds for better visualization
-- **Mask Persistence**: Intelligent caching system for instant re-access
-- **Data Persistence**: Firebase emulator data persists across restarts
-- **Multi-item Support**: Allows multiple items per category (e.g., pair of shoes)
+
+### Architecture Features
+- **Unified Backend Architecture**: Flask serves as the single API gateway for all Firebase operations
+- **Cross-Platform Consistency**: Web and mobile apps use identical Flask endpoints
+- **Mobile App with Local Caching**: React Native app with AsyncStorage for lightning-fast performance
+- **Smart Image Resizing**: Automatic resizing at upload time for efficient processing
+- **Content-Aware Cropping**: Generous padding ensures full clothing items are visible
+- **Production Firebase**: Migrated from emulator to production Firebase with proper authentication
+- **Optimized API Endpoints**: Single endpoint returns all clothing items (shirts, pants, shoes) for better performance
 
 ## Tech Stack & Pipeline
 
@@ -31,18 +35,24 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 
 ### Backend
 - **Flask** - Python web framework
-- **SAM2** - Meta's Segment Anything Model for image segmentation
-- **CLIP** - OpenAI's model for zero-shot image classification
-- **Replicate API** - Cloud inference for fast processing
+- **Segformer B2 Clothes** - Specialized model for clothing segmentation and classification
+- **Hugging Face Transformers** - Model inference framework
 - **OpenCV** - Image processing
 - **NumPy** - Numerical operations
+- **PyTorch** - Deep learning framework
 
 ### Infrastructure
-- **Firebase Auth** - User authentication
+- **Firebase Auth** - User authentication (production)
 - **Firebase Storage** - Cloud storage for images and masks
-- **Firebase Local Emulator** - Local development environment
-- **Replicate API** - Cloud-based SAM2 inference
+- **Firebase Admin SDK** - Server-side Firebase operations
+- **Hugging Face API** - Optional cloud-based inference
 - **Gemini API** - AI-powered virtual try-on and fashion advice
+
+### Mobile App
+- **React Native** - Cross-platform mobile framework
+- **Expo** - Development and build tools
+- **AsyncStorage** - Local caching for instant loading
+- **React Navigation** - Native navigation
 
 ## Project Structure
 
@@ -57,12 +67,14 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 - `src/storageService.js` - Firebase storage operations for images and masks
 
 ### Backend Files
-- `backend/flask_api.py` - Main Flask server with all API endpoints (SAM2 via Replicate only)
-- `backend/config_improved.py` - Simplified configuration with enhanced SAM2 parameters
-- `backend/services/gemini_service.py` - NEW! Gemini API service for virtual try-on functionality
-- `backend/services/sam2_service.py` - SAM2 segmentation via Replicate API with mask conversion
-- `backend/clip_classifier.py` - CLIP-based clothing classification (fast and accurate)
-- `backend/services/person_extractor.py` - MediaPipe person detection to reduce background noise
+- `backend/flask_api.py` - Main Flask server with all API endpoints and Firebase gateway
+- `backend/config_improved.py` - Application configuration
+- `backend/services/gemini_service.py` - Gemini API service for virtual try-on functionality
+- `backend/services/segformer_service.py` - Segformer model service for local inference
+- `backend/services/segformer_api_service.py` - Hugging Face API integration for Segformer
+- `backend/services/firebase_service.py` - Centralized Firebase operations service
+- `backend/services/visualization_service.py` - Image processing and closet visualizations
+- `backend/services/image_processing_service.py` - Image utilities and transformations
 
 ### Configuration Files
 - `.env` - Environment variables (API keys)
@@ -78,17 +90,27 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 ## Processing Pipeline
 
 1. **Image Upload** → User uploads photo locally (no Firebase until save)
-2. **Segmentation** → SAM2 via Replicate API generates masks with enhanced parameters
-3. **Classification** → CLIP classifies each mask as clothing type with original labels preserved
-4. **Post-processing** → Creates visualizations with transparent backgrounds for closet view
-5. **Manual Refinement** → User can edit AI selections with category-focused interface
-6. **Storage** → Final selections saved to Firebase with metadata, visualizations, and closet-specific views
-7. **Display** → Items viewable in Wardrobe (full photos) or Closet (extracted items)
+2. **Segmentation & Classification** → Segformer B2 Clothes model performs both tasks in one pass
+3. **Post-processing** → Creates visualizations with transparent backgrounds for closet view
+4. **Manual Refinement** → User can edit AI selections with category-focused interface
+5. **Storage** → Final selections saved to Firebase with metadata, visualizations, and closet-specific views
+6. **Display** → Items viewable in Wardrobe (full photos) or Closet (extracted items)
 
 ## API Endpoints
 
-- `POST /process` - Process image with SAM2 (Replicate API) and classify segments
+### Processing Endpoints
+- `POST /process` - Process image with Segformer model for segmentation and classification
 - `POST /update-mask-labels` - Update mask classifications after manual editing
+
+### Firebase Gateway Endpoints (New)
+- `POST /firebase/save-results` - Save processed results to Firebase (used by both web and mobile)
+- `GET /firebase/images/<user_id>` - Get user's wardrobe images
+- `GET /firebase/clothing-items/<user_id>` - Get all clothing items for closet (optimized)
+- `GET /firebase/clothing-counts/<user_id>` - Get just the counts for smart sync (lightweight)
+- `GET /firebase/mask-data/<user_id>/<image_name>` - Get mask data for specific image
+- `POST /firebase/delete-image` - Delete image and associated data
+
+### Gemini Endpoints
 - `POST /get-gemini-data` - Get outfit details and fashion advice from Gemini
 - `POST /prepare-wardrobe-gemini` - Prepare wardrobe items for virtual try-on
 - `POST /gemini-tryon` - Perform virtual try-on with selected items
@@ -115,88 +137,93 @@ The app runs on:
 
 Required in `.env`:
 ```
-REPLICATE_API_TOKEN=your_replicate_token  # For Replicate provider
-FAL_KEY=your_fal_key                      # For FAL provider
-GOOGLE_API_KEY=your_gemini_key            # Optional for try-on
+# API Keys
+GOOGLE_API_KEY=your_gemini_key            # For virtual try-on
+
+# Firebase Configuration (Production)
+GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account-key.json
+FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+
+# Optional for Hugging Face API mode
+USE_HF_API=false                          # Set to 'true' to use HF API instead of local model
+HUGGINGFACE_API_TOKEN=your_hf_token       # Optional, for private models or higher rate limits
 ```
 
-## Switching SAM2 Providers
+## Model Inference Options
 
-KapdaAI supports two providers for SAM2 segmentation:
-- **Replicate** (default): The original implementation
-- **FAL**: Alternative provider with similar performance
+KapdaAI uses the Segformer B2 Clothes model (MIT licensed) with two deployment options:
 
-To switch providers, update the `provider` field in `backend/config_improved.py`:
-```python
-SAM2_PROVIDER_CONFIG = {
-    "provider": "fal",  # Options: "replicate" or "fal"
-    "fal_endpoint": "https://fal.run/fal-ai/sam2/auto-segment"
-}
-```
+### Local Model (Default)
+- Downloads and runs the model locally (~50MB)
+- No internet required after initial download
+- Best for development and privacy
+
+### Hugging Face API
+- Uses Hugging Face's inference API
+- No local GPU/memory requirements
+- Set `USE_HF_API=true` in your `.env` file
 
 ## Key Features Implementation
 
+### Architecture
+- **Unified Backend**: Flask serves as the single source of truth for all Firebase operations
+- **No Duplicate Code**: Web and mobile apps share the same backend endpoints
+- **Production Firebase**: Migrated from emulator to production with proper authentication
+- **Smart Image Processing**: Automatic resizing at upload for efficient processing (max 1024px)
+
+### User Experience
 - **Multi-user Support**: Each user has isolated wardrobe storage with Firebase auth
-- **Local-first Processing**: Images processed locally until explicit save to Firebase
-- **Enhanced SAM2 Parameters**: Improved segmentation with 32x32 point grid, optimized thresholds, and multimask output
-- **Transparent Backgrounds**: All clothing extractions use RGBA format with transparent backgrounds
-- **Dual Views**: Wardrobe (full photos) and Closet (extracted items) for different use cases
-- **Visual Feedback**: Color-coded mask editing (blue=shirt, red=pants, orange=shoes)
-- **Batch Operations**: Multiple items can be selected per category
-- **Persistent Storage**: Firebase emulator data saved between sessions
-- **Mask Preservation**: Original AI labels preserved during manual edits
-- **Category Isolation**: Edit one clothing category at a time without affecting others
-- **Virtual Try-On**: AI-powered outfit visualization using Gemini API
-- **Intelligent Processing**: Always uses Replicate API for consistent, fast results
+- **Mobile App**: Full-featured React Native app with local caching for instant loading
+- **User-Controlled Saving**: Preview segmentation results before saving (mobile)
+- **Content-Aware Display**: Generous padding (50%) ensures full clothing items are visible
+- **Pull-to-Refresh**: Manual sync option in mobile app
 
-## Cloud Run Deployment (Backend)
+### Technical Features
+- **Single Model Architecture**: Segformer B2 handles both segmentation and classification
+- **18 Clothing Categories**: Detects shirts, pants, dresses, shoes, accessories, and more
+- **Transparent Backgrounds**: All clothing extractions use RGBA format
+- **Dual Views**: Wardrobe (full photos) and Closet (extracted items)
+- **Visual Feedback**: Color-coded mask editing in web app
+- **Optimized Endpoints**: Single API call returns all clothing items
+- **Local Caching**: Mobile app uses AsyncStorage for offline support
+- **Smart Sync Strategy**: Intelligent count-based synchronization only when needed
 
-The backend is deployed on Google Cloud Run for scalability and cost-effectiveness:
+## Segformer Model Details
 
-```bash
-# Option 1: Use the deployment script (recommended)
-cd backend
-./deploy.sh
+KapdaAI uses the **mattmdjaga/segformer_b2_clothes** model:
+- **License**: MIT (free for commercial use)
+- **Model Size**: ~50MB
+- **Categories**: 18 clothing/body part classes
+- **Architecture**: SegFormer B2 fine-tuned on ATR dataset
+- **Performance**: Runs on CPU or GPU (MPS on Apple Silicon)
 
-# Option 2: Manual deployment
-# Build with caching (ALWAYS use this for fast builds)
-cd backend
-gcloud builds submit --config cloudbuild.yaml
+### Supported Categories:
+- Clothing: Upper-clothes, Pants, Skirt, Dress, Belt, Left-shoe, Right-shoe
+- Accessories: Hat, Sunglasses, Bag, Scarf
+- Body parts: Hair, Face, Arms, Legs (marked as non-clothing)
 
-# Deploy to Cloud Run
-gcloud run deploy kapdaai-backend \
-  --image gcr.io/poshakai/kapdaai-backend:latest \
-  --platform managed \
-  --region us-central1 \
-  --memory 8Gi \
-  --timeout 540 \
-  --allow-unauthenticated \
-  --update-secrets="REPLICATE_API_TOKEN=replicate-api-token:latest,FAL_KEY=fal-api-key:latest,GOOGLE_API_KEY=gemini-api-key:latest"
-```
+## Local Development Tips
 
-### Setting up Secrets in Google Secret Manager
+- **First Run**: Model download happens on first run (~50MB, cached afterward)
+- **Apple Silicon**: Automatically uses MPS (Metal) for faster inference
+- **Multiple Terminals**: Run Flask and React in separate terminals for faster restarts
+- **Mobile Development**: Use physical device for best performance, ensure backend is accessible
+- **Image Processing**: Images automatically resized to max 1024px for efficiency
+- **Closet Loading**: Mobile app loads instantly from cache, syncs in background
 
-```bash
-# Create secrets if they don't exist
-echo -n "your-replicate-token" | gcloud secrets create replicate-api-token --data-file=-
-echo -n "your-fal-key" | gcloud secrets create fal-api-key --data-file=-
-echo -n "your-gemini-key" | gcloud secrets create gemini-api-key --data-file=-
+## Mobile App
 
-# Update existing secrets
-echo -n "new-replicate-token" | gcloud secrets versions add replicate-api-token --data-file=-
-echo -n "new-fal-key" | gcloud secrets versions add fal-api-key --data-file=-
-echo -n "new-gemini-key" | gcloud secrets versions add gemini-api-key --data-file=-
+The mobile app is located in `/mobile-app` directory. See the [Mobile App README](mobile-app/README.md) for detailed setup and features.
 
-# Grant Cloud Run service account access to secrets
-SERVICE_ACCOUNT="560568328203-compute@developer.gserviceaccount.com"
-gcloud secrets add-iam-policy-binding replicate-api-token --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding fal-api-key --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding gemini-api-key --member="serviceAccount:$SERVICE_ACCOUNT" --role="roles/secretmanager.secretAccessor"
-```
-
-Features:
-- **Docker Layer Caching**: Fast rebuilds with cloudbuild.yaml (saves 10-15 minutes)
-- **8GB Memory**: Handles large models (CLIP, MediaPipe)
-- **Auto-scaling**: Scales to zero when not in use
-- **Environment**: Uses Google Secret Manager for API keys
-- **SAM2 Service**: Modular architecture with proper mask format conversion
+Key mobile features:
+- Lightning-fast loading with local caching
+- Works offline with cached data
+- User-controlled save after segmentation
+- Pull-to-refresh for manual sync
+- Smart sync strategy:
+  - On app open: Sync count and images
+  - On closet reopen: Check count only
+  - If count matches: Use cached data
+  - If count differs: Sync only differences
+  - No sync during active session
+- Optimized for both iOS and Android

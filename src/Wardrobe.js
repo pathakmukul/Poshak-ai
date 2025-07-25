@@ -17,6 +17,10 @@ function Wardrobe({ user, onBack }) {
   const [selectedGarment, setSelectedGarment] = useState('');
   const [garments, setGarments] = useState([]);
   const [selectedClothingType, setSelectedClothingType] = useState('shirt');
+  const [lastTryOnParams, setLastTryOnParams] = useState(null); // Store last try-on parameters
+  
+  // TEST: Using Segformer Model - Updated at 2:35 AM
+  console.log("🚀 WARDROBE UPDATED: Now using Segformer model instead of MediaPipe+SAM2+CLIP");
 
   // Load user's wardrobe items
   useEffect(() => {
@@ -43,6 +47,7 @@ function Wardrobe({ user, onBack }) {
     try {
       const result = await getUserImages(user.uid);
       if (result.success) {
+        console.log('Loaded wardrobe items:', result.images);
         setWardrobeItems(result.images);
       }
     } catch (error) {
@@ -65,6 +70,35 @@ function Wardrobe({ user, onBack }) {
       } else {
         alert('Failed to delete item');
       }
+    }
+  };
+
+  const redoTryOn = async () => {
+    if (!lastTryOnParams) return;
+    
+    setTryOnProcessing(true);
+    
+    try {
+      // Reuse the stored parameters
+      const tryOnResponse = await fetch(`${API_URL}/gemini-tryon`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(lastTryOnParams),
+      });
+
+      const tryOnData = await tryOnResponse.json();
+      
+      if (tryOnData.success) {
+        setTryOnResult(tryOnData.result_image);
+      } else {
+        alert(`Error: ${tryOnData.error}`);
+      }
+    } catch (error) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setTryOnProcessing(false);
     }
   };
 
@@ -116,6 +150,13 @@ function Wardrobe({ user, onBack }) {
       if (tryOnData.success) {
         setTryOnResult(tryOnData.result_image);
         setShowTryOnModal(true);
+        // Store parameters for redo
+        setLastTryOnParams({
+          person_image: `data:image/png;base64,${geminiData.original_image}`,
+          mask_image: `data:image/png;base64,${geminiData.mask_image}`,
+          garment_file: selectedGarment,
+          clothing_type: selectedClothingType
+        });
       } else {
         alert(`Error: ${tryOnData.error}`);
       }
@@ -181,7 +222,11 @@ function Wardrobe({ user, onBack }) {
                   setLoadingMasks(false);
                 }}
               >
-                <img src={item.url} alt={`Wardrobe item ${index + 1}`} />
+                <img 
+                  src={item.url} 
+                  alt={`Wardrobe item ${index + 1}`} 
+                  style={{ backgroundColor: '#f5f5f5' }}
+                />
                 <div className="item-overlay">
                   <button
                     className="delete-button"
@@ -253,11 +298,23 @@ function Wardrobe({ user, onBack }) {
                         
                         if (count === 0 || !visualization) return null; // Don't show empty categories
                         
+                        // Handle both base64 and URL-based visualizations
+                        let imageSrc;
+                        if (selectedItemMasks.isUrlBased) {
+                          // For URL-based saves, visualization contains the storage path
+                          const encodedPath = encodeURIComponent(visualization);
+                          imageSrc = `https://firebasestorage.googleapis.com/v0/b/kapdaai-local.appspot.com/o/${encodedPath}?alt=media`;
+                        } else if (visualization.startsWith('http') || visualization.startsWith('/')) {
+                          imageSrc = visualization;  // It's already a URL
+                        } else {
+                          imageSrc = `data:image/png;base64,${visualization}`; // It's base64
+                        }
+                        
                         return (
                           <div key={type} className="segment-preview">
                             <h4>{type.charAt(0).toUpperCase() + type.slice(1)} ({count})</h4>
                             <img 
-                              src={`data:image/png;base64,${visualization}`}
+                              src={imageSrc}
                               alt={`${type} mask`}
                               style={{ backgroundColor: '#f8f8f8' }}
                             />
@@ -383,16 +440,29 @@ function Wardrobe({ user, onBack }) {
                   </div>
                 </div>
                 
-                <button
-                  className="try-on-button"
-                  onClick={() => {
-                    setTryOnResult(null);
-                    setSelectedClothingType('shirt');
-                  }}
-                  style={{ marginTop: '20px' }}
-                >
-                  Try Another Garment
-                </button>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '20px' }}>
+                  <button
+                    className="try-on-button"
+                    onClick={redoTryOn}
+                    disabled={tryOnProcessing}
+                    style={{ 
+                      backgroundColor: '#9c27b0',
+                      opacity: tryOnProcessing ? 0.7 : 1
+                    }}
+                  >
+                    {tryOnProcessing ? 'Regenerating...' : '🔄 Redo Try-On'}
+                  </button>
+                  
+                  <button
+                    className="try-on-button"
+                    onClick={() => {
+                      setTryOnResult(null);
+                      setSelectedClothingType('shirt');
+                    }}
+                  >
+                    Try Another Garment
+                  </button>
+                </div>
               </div>
             )}
           </div>
