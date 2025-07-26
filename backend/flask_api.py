@@ -41,7 +41,7 @@ from config_improved import DEBUG_CONFIG
 from services.gemini_service import GeminiService
 
 # Import Firebase service for centralized Firebase operations
-from services.firebase_service import FirebaseService
+from services.firebase_service import FirebaseService, bucket
 
 # Import visualization and image processing services
 from services.visualization_service import (
@@ -137,9 +137,9 @@ def serve_person_image(filename):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/static/garments/<filename>')
+@app.route('/static/garments/<path:filename>')
 def serve_garment_image(filename):
-    """Serve garment images"""
+    """Serve garment images including from subfolders"""
     try:
         print(f"Serving garment image: {filename}")
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -155,10 +155,16 @@ def serve_garment_image(filename):
         if not os.path.exists(image_dir):
             return jsonify({"error": "Garments directory not found"}), 404
             
-        if not os.path.exists(os.path.join(image_dir, filename)):
+        # Handle subfolder paths
+        full_path = os.path.join(image_dir, filename)
+        if not os.path.exists(full_path):
             return jsonify({"error": f"Garment {filename} not found"}), 404
             
-        response = send_from_directory(image_dir, filename)
+        # Get directory and filename separately for send_from_directory
+        file_dir = os.path.dirname(full_path)
+        file_name = os.path.basename(full_path)
+        
+        response = send_from_directory(file_dir, file_name)
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
     except Exception as e:
@@ -445,7 +451,7 @@ def quick_load_masks(filename):
 
 @app.route('/garments', methods=['GET'])
 def get_garments():
-    """Get list of available garment images"""
+    """Get list of available garment images organized by type"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         # Look for data directory in parent (react-app) folder
@@ -456,23 +462,40 @@ def get_garments():
         
         if not os.path.exists(data_dir):
             print(f"Data directory not found: {data_dir}")
-            return jsonify({'garments': []})
+            return jsonify({'garments': {}, 'flat_list': []})
             
         garments_dir = os.path.join(data_dir, 'sample_images', 'garments')
         print(f"Garments directory: {garments_dir}")
         
-        garments = []
+        garments_by_type = {}
+        flat_list = []  # For backward compatibility
+        
         if os.path.exists(garments_dir):
-            print(f"Found garments directory, listing files...")
-            for file in os.listdir(garments_dir):
-                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.avif')):
-                    garments.append(file)
-                    print(f"  Found garment: {file}")
+            print(f"Found garments directory, scanning folders...")
+            
+            # Check for category folders
+            for category in os.listdir(garments_dir):
+                category_path = os.path.join(garments_dir, category)
+                if os.path.isdir(category_path) and category.upper() in ['SHIRT', 'PANT', 'SHOES', 'ACCESSORIES']:
+                    category_key = 'pants' if category.upper() == 'PANT' else category.lower()
+                    garments_by_type[category_key] = []
+                    
+                    print(f"  Scanning {category} folder...")
+                    for file in os.listdir(category_path):
+                        if file.lower().endswith(('.png', '.jpg', '.jpeg', '.avif')):
+                            # Store with relative path from garments folder
+                            relative_path = f"{category}/{file}"
+                            garments_by_type[category_key].append(relative_path)
+                            flat_list.append(relative_path)
+                            print(f"    Found: {file}")
         else:
             print(f"Garments directory not found: {garments_dir}")
         
-        print(f"Returning {len(garments)} garments")
-        return jsonify({'garments': sorted(garments)})
+        print(f"Returning garments by type: {[(k, len(v)) for k, v in garments_by_type.items()]}")
+        return jsonify({
+            'garments': garments_by_type,
+            'flat_list': sorted(flat_list)  # For backward compatibility
+        })
     except Exception as e:
         print(f"Error in get_garments: {str(e)}")
         import traceback
@@ -912,6 +935,93 @@ def get_user_clothing_items(user_id):
             'shoes': []
         })
 
+# Virtual Closet endpoints
+@app.route('/firebase/virtual-closet', methods=['POST'])
+def save_virtual_closet_item():
+    """Save virtual try-on result to Firebase Storage"""
+    try:
+        data = request.json
+        user_id = data.get('userId')
+        item = data.get('item')
+        
+        if not user_id or not item:
+            return jsonify({'error': 'Missing userId or item data'}), 400
+        
+        # Store in Firebase Storage as JSON
+        item_id = item.get('id', str(int(datetime.now().timestamp() * 1000)))
+        blob_path = f"users/{user_id}/virtual-closet/{item_id}.json"
+        blob = bucket.blob(blob_path)
+        
+        # Convert item to JSON
+        json_data = json.dumps(item)
+        blob.upload_from_string(json_data, content_type='application/json')
+        
+        return jsonify({
+            'success': True,
+            'id': item_id
+        })
+        
+    except Exception as e:
+        print(f"Error saving virtual closet item: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/firebase/virtual-closet/<user_id>', methods=['GET'])
+def get_virtual_closet_items(user_id):
+    """Get all virtual closet items for a user"""
+    try:
+        prefix = f"users/{user_id}/virtual-closet/"
+        blobs = bucket.list_blobs(prefix=prefix)
+        
+        items = []
+        for blob in blobs:
+            # Skip directories
+            if blob.name.endswith('/'):
+                continue
+            
+            # Download and parse JSON
+            json_data = blob.download_as_text()
+            item = json.loads(json_data)
+            
+            # Ensure ID is set
+            if 'id' not in item:
+                item['id'] = os.path.basename(blob.name).replace('.json', '')
+            
+            items.append(item)
+        
+        # Sort by createdAt (newest first)
+        items.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'items': items
+        })
+        
+    except Exception as e:
+        print(f"Error getting virtual closet items: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'items': []
+        })
+
+@app.route('/firebase/virtual-closet/<user_id>/<item_id>', methods=['DELETE'])
+def delete_virtual_closet_item(user_id, item_id):
+    """Delete a virtual closet item"""
+    try:
+        blob_path = f"users/{user_id}/virtual-closet/{item_id}.json"
+        blob = bucket.blob(blob_path)
+        
+        if not blob.exists():
+            return jsonify({'error': 'Item not found'}), 404
+        
+        blob.delete()
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        print(f"Error deleting virtual closet item: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 # Gemini routes
 @app.route('/get-gemini-data', methods=['POST'])
 def get_gemini_data():
@@ -933,24 +1043,94 @@ def get_gemini_data():
 def prepare_wardrobe_gemini():
     """Prepare wardrobe item for Gemini try-on using stored masks"""
     data = request.json
+    print(f"\n=== /prepare-wardrobe-gemini called ===")
+    print(f"Request from: {request.remote_addr}")
+    print(f"Clothing type: {data.get('clothing_type')}")
+    print(f"Has image_url: {bool(data.get('image_url'))}")
+    print(f"Has mask_data: {bool(data.get('mask_data'))}")
+    if data.get('mask_data'):
+        print(f"Mask data keys: {list(data.get('mask_data', {}).keys())}")
+    
     response, status_code = gemini_service.prepare_wardrobe_gemini(
         data.get('image_url'),
         data.get('mask_data'),
         data.get('clothing_type')
     )
+    
+    print(f"Response status: {status_code}")
+    if status_code == 200:
+        print(f"Success - image sizes in response: original={len(response.get('original_image', ''))}, mask={len(response.get('mask_image', ''))}")
+    else:
+        print(f"Error: {response.get('error', 'Unknown error')}")
+    
     return jsonify(response), status_code
 
 @app.route('/gemini-tryon', methods=['POST'])
 def gemini_tryon():
     """Perform virtual try-on using Gemini"""
     data = request.json
+    print(f"\n=== /gemini-tryon called ===")
+    print(f"Request from: {request.remote_addr}")
+    print(f"Garment file: {data.get('garment_file')}")
+    print(f"Clothing type: {data.get('clothing_type', 'shirt')}")
+    print(f"Has person_image: {bool(data.get('person_image'))}")
+    print(f"Has mask_image: {bool(data.get('mask_image'))}")
+    if data.get('person_image'):
+        print(f"Person image length: {len(data.get('person_image'))}")
+    if data.get('mask_image'):
+        print(f"Mask image length: {len(data.get('mask_image'))}")
+    
     response, status_code = gemini_service.gemini_tryon(
         data.get('person_image'),
         data.get('mask_image'),
         data.get('garment_file'),
         data.get('clothing_type', 'shirt')
     )
+    
+    print(f"Response status: {status_code}")
+    if status_code != 200:
+        print(f"Error: {response.get('error', 'Unknown error')}")
+    
     return jsonify(response), status_code
+
+@app.route('/gemini-tryon-multiple', methods=['POST'])
+def gemini_tryon_multiple():
+    """Test endpoint for multi-item virtual try-on using Gemini"""
+    try:
+        data = request.json
+        
+        # Debug incoming request
+        print(f"\n=== /gemini-tryon-multiple called ===")
+        print(f"Request from: {request.remote_addr}")
+        print(f"Clothing types: {data.get('clothing_types', [])}")
+        print(f"Has person_image: {bool(data.get('person_image'))}")
+        print(f"Mask images provided: {list(data.get('mask_images', {}).keys())}")
+        print(f"Garment files provided: {list(data.get('garment_files', {}).keys())}")
+        
+        # Validate required fields
+        if not data.get('person_image') or not data.get('mask_images') or not data.get('garment_files'):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Call Gemini service
+        result, status_code = gemini_service.gemini_tryon_multiple(
+            person_image=data['person_image'],
+            mask_images=data['mask_images'],
+            garment_files=data['garment_files'],
+            clothing_types=data.get('clothing_types', [])
+        )
+        
+        print(f"Response status: {status_code}")
+        if status_code != 200:
+            print(f"Error: {result.get('error', 'Unknown error')}")
+        else:
+            print(f"Successfully replaced: {result.get('items_replaced', [])}")
+        
+        return jsonify(result), status_code
+    except Exception as e:
+        print(f"[gemini-tryon-multiple] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 def cleanup():
     """Clean up models from memory on shutdown"""

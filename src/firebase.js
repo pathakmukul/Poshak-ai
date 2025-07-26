@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
+import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration for PoshakAI production
 const firebaseConfig = {
@@ -9,7 +10,7 @@ const firebaseConfig = {
   projectId: "poshakai",
   storageBucket: "poshakai.appspot.com",
   messagingSenderId: "560568328203",
-  appId: "1:560568328203:web:YOUR_APP_ID" // You'll need to get this from Firebase Console
+  appId: "1:560568328203:web:c5c4d5e6f7g8h9i0" // Replace with actual app ID from Firebase Console
 };
 
 // Initialize Firebase
@@ -18,6 +19,7 @@ const app = initializeApp(firebaseConfig);
 // Initialize services
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+export const db = getFirestore(app);
 
 // Test users configuration
 export const DUMMY_USERS = [

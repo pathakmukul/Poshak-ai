@@ -10,6 +10,7 @@ import { CacheService } from './src/services/cacheService';
 import Login from './src/screens/Login';
 import Home from './src/screens/Home';
 import Wardrobe from './src/screens/Wardrobe';
+import VirtualCloset from './src/screens/VirtualCloset';
 import Closet from './src/screens/Closet';
 import OpenAISwitch from './src/screens/OpenAISwitch';
 import UploadSegment from './src/screens/UploadSegment';
@@ -107,6 +108,12 @@ export default function App() {
                 options={{ title: 'My Closet' }}
               >
                 {props => <Closet {...props} user={currentUser} />}
+              </Stack.Screen>
+              <Stack.Screen 
+                name="VirtualCloset" 
+                options={{ title: 'Virtual Closet' }}
+              >
+                {props => <VirtualCloset {...props} user={currentUser} />}
               </Stack.Screen>
               <Stack.Screen 
                 name="OpenAISwitch" 

@@ -3,13 +3,14 @@ import './App.css';
 import Login from './Login';
 import Wardrobe from './Wardrobe';
 import Closet from './Closet';
+import VirtualCloset from './VirtualCloset';
 import OpenAISwitch from './OpenAISwitch';
 import { auth, logoutUser } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', or 'openai'
+  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', 'virtualcloset', or 'openai'
 
   // Handle user login
   const handleLogin = (user) => {
@@ -63,6 +64,11 @@ function App() {
     return <Closet user={currentUser} onBack={() => setCurrentView('main')} />;
   }
 
+  // Show virtual closet view
+  if (currentView === 'virtualcloset') {
+    return <VirtualCloset user={currentUser} onBack={() => setCurrentView('main')} />;
+  }
+
   // Show OpenAI switch view
   if (currentView === 'openai') {
     return <OpenAISwitch user={currentUser} onBack={() => setCurrentView('main')} />;
@@ -96,6 +102,12 @@ function App() {
             >
               Closet
             </button>
+            <button 
+              className={`nav-button ${currentView === 'virtualcloset' ? 'active' : ''}`}
+              onClick={() => setCurrentView('virtualcloset')}
+            >
+              Virtual Closet
+            </button>
           </div>
           <div className="nav-right">
             <span className="user-name">👤 {currentUser.username}</span>
@@ -125,6 +137,13 @@ function App() {
               <h3>My Closet</h3>
               <p>View your collection of clothing items</p>
               <button className="card-button">Open Closet →</button>
+            </div>
+            
+            <div className="action-card" onClick={() => setCurrentView('virtualcloset')}>
+              <div className="card-icon">VC</div>
+              <h3>Virtual Closet</h3>
+              <p>View your saved try-on results</p>
+              <button className="card-button">View Collection →</button>
             </div>
             
             <div className="action-card" onClick={() => setCurrentView('openai')}>

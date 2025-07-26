@@ -33,6 +33,9 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
+# Export for use in other modules
+__all__ = ['FirebaseService', 'bucket', 'db']
+
 class FirebaseService:
     """Handle all Firebase operations for the application"""
     
@@ -331,6 +334,7 @@ class FirebaseService:
                     'person_only': segmentation_results.get('person_only_img')
                 },
                 'closet_visualizations': segmentation_results.get('closet_visualizations', {}),
+                'binary_masks': segmentation_results.get('binary_masks', {}),
                 'originalImageUrl': upload_result['url']
             }
             

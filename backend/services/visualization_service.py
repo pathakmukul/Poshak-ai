@@ -15,6 +15,43 @@ def image_to_base64(image):
     pil_img.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()
 
+def create_binary_mask(image_shape, masks, clothing_type):
+    """Create a binary mask for a specific clothing type
+    
+    Args:
+        image_shape: (height, width) tuple
+        masks: List of detected masks
+        clothing_type: Type of clothing to create mask for
+        
+    Returns:
+        Binary mask as numpy array (255 where clothing is, 0 elsewhere)
+    """
+    h, w = image_shape[:2]
+    binary_mask = np.zeros((h, w), dtype=np.uint8)
+    
+    # Filter for specific clothing type
+    if clothing_type == "shirt":
+        type_labels = ["shirt", "dress"]
+    elif clothing_type == "pants":
+        type_labels = ["pants", "skirt"]
+    elif clothing_type == "shoes":
+        type_labels = ["shoes"]
+    else:  # all items
+        type_labels = ["shirt", "pants", "shoes", "dress", "skirt"]
+    
+    clothing_masks = [m for m in masks if m.get('label', '') in type_labels and not m.get('skip_viz', False)]
+    
+    # Special handling for shoes
+    if clothing_type == "shoes" and len(clothing_masks) > 2:
+        clothing_masks = sorted(clothing_masks, key=lambda x: x.get('area', 0), reverse=True)[:2]
+    
+    # Create binary mask
+    for mask_dict in clothing_masks:
+        mask = mask_dict['segmentation']
+        binary_mask[mask] = 255
+    
+    return binary_mask
+
 
 
 
@@ -251,6 +288,11 @@ def generate_all_visualizations(image_rgb, masks):
     # Create person-only image (no background)
     person_only_img = create_person_only_image(image_rgb, masks)
     
+    # Create binary masks for Gemini
+    shirt_mask = create_binary_mask(image_rgb.shape, masks, "shirt")
+    pants_mask = create_binary_mask(image_rgb.shape, masks, "pants")
+    shoes_mask = create_binary_mask(image_rgb.shape, masks, "shoes")
+    
     return {
         'all_items_img': image_to_base64(all_items_img),
         'all_items_count': all_items_count,
@@ -272,6 +314,11 @@ def generate_all_visualizations(image_rgb, masks):
             'shirt': closet_shirt['content_bounds'],
             'pants': closet_pants['content_bounds'],
             'shoes': closet_shoes['content_bounds']
+        },
+        'binary_masks': {
+            'shirt': image_to_base64(shirt_mask) if shirt_count > 0 else None,
+            'pants': image_to_base64(pants_mask) if pants_count > 0 else None,
+            'shoes': image_to_base64(shoes_mask) if shoes_count > 0 else None
         }
     }
 

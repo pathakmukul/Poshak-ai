@@ -61,6 +61,18 @@ function Home({ navigation, user, onLogout }) {
 
           <TouchableOpacity 
             style={styles.actionCard} 
+            onPress={() => navigateToScreen('VirtualCloset')}
+          >
+            <Text style={styles.cardIcon}>VC</Text>
+            <Text style={styles.cardTitle}>Virtual Closet</Text>
+            <Text style={styles.cardDescription}>View your saved try-on results</Text>
+            <View style={styles.cardButton}>
+              <Text style={styles.cardButtonText}>View Collection →</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionCard} 
             onPress={() => navigateToScreen('OpenAISwitch')}
           >
             <Text style={styles.cardIcon}>🎨</Text>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './Wardrobe.css';
 import UploadSegmentModal from './UploadSegmentModal';
 import { getUserImages, deleteUserImage, getMaskData } from './storageService';
+import { saveVirtualTryOn, clearLocalStorageIfNeeded } from './virtualClosetService';
 import API_URL from './config';
 
 function Wardrobe({ user, onBack }) {
@@ -15,15 +16,20 @@ function Wardrobe({ user, onBack }) {
   const [tryOnProcessing, setTryOnProcessing] = useState(false);
   const [tryOnResult, setTryOnResult] = useState(null);
   const [selectedGarment, setSelectedGarment] = useState('');
-  const [garments, setGarments] = useState([]);
+  const [garments, setGarments] = useState({});
   const [selectedClothingType, setSelectedClothingType] = useState('shirt');
+  const [selectedReplacements, setSelectedReplacements] = useState({}); // {shirt: 'SHIRT/file.png', pants: 'PANT/file.png'}
   const [lastTryOnParams, setLastTryOnParams] = useState(null); // Store last try-on parameters
+  const [showStoredTick, setShowStoredTick] = useState(false);
+  const [showOriginalImage, setShowOriginalImage] = useState(false); // Toggle between original and generated
   
   // TEST: Using Segformer Model - Updated at 2:35 AM
   console.log("🚀 WARDROBE UPDATED: Now using Segformer model instead of MediaPipe+SAM2+CLIP");
 
   // Load user's wardrobe items
   useEffect(() => {
+    // Clear localStorage if needed to prevent quota errors
+    clearLocalStorageIfNeeded();
     loadWardrobeItems();
   }, [user]);
 
@@ -34,9 +40,7 @@ function Wardrobe({ user, onBack }) {
       .then(data => {
         if (data.garments) {
           setGarments(data.garments);
-          if (data.garments.length > 0) {
-            setSelectedGarment(data.garments[0]);
-          }
+          // Don't pre-select any garment
         }
       })
       .catch(err => console.error('Error loading garments:', err));
@@ -74,37 +78,52 @@ function Wardrobe({ user, onBack }) {
   };
 
   const redoTryOn = async () => {
-    if (!lastTryOnParams) return;
-    
-    setTryOnProcessing(true);
+    performGeminiTryOn();
+  };
+
+  const handleStoreTryOn = async () => {
+    if (!tryOnResult || !selectedItem) return;
     
     try {
-      // Reuse the stored parameters
-      const tryOnResponse = await fetch(`${API_URL}/gemini-tryon`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(lastTryOnParams),
-      });
-
-      const tryOnData = await tryOnResponse.json();
+      // Store the try-on result
+      const tryOnData = {
+        originalImage: selectedItem.url,
+        resultImage: `data:image/png;base64,${tryOnResult}`,
+        garments: selectedReplacements,
+        masks: selectedItemMasks,
+      };
       
-      if (tryOnData.success) {
-        setTryOnResult(tryOnData.result_image);
+      // Store using service (handles localStorage + Firestore)
+      const result = await saveVirtualTryOn(user.uid, tryOnData);
+      
+      if (result.success) {
+        // Show green tick
+        setShowStoredTick(true);
+        
+        // Reset after 2 seconds
+        setTimeout(() => {
+          setShowStoredTick(false);
+        }, 2000);
+        
+        alert('Try-on result saved to Virtual Closet!');
       } else {
-        alert(`Error: ${tryOnData.error}`);
+        console.error('Store failed:', result);
+        alert(`Failed to store try-on result: ${result.error || 'Unknown error'}`);
       }
     } catch (error) {
-      alert(`Error: ${error.message}`);
-    } finally {
-      setTryOnProcessing(false);
+      console.error('Store error:', error);
+      alert(`Failed to store try-on result: ${error.message}`);
     }
   };
 
   const performGeminiTryOn = async () => {
-    if (!selectedItem || !selectedGarment || !selectedItemMasks) {
-      alert('Please select an item with mask data and a garment');
+    if (!selectedItem || !selectedItemMasks) {
+      alert('Please wait for mask data to load');
+      return;
+    }
+
+    if (Object.keys(selectedReplacements).length === 0) {
+      alert('Please select at least one garment to try on');
       return;
     }
 
@@ -112,36 +131,69 @@ function Wardrobe({ user, onBack }) {
     setTryOnResult(null);
 
     try {
-      // Use the new endpoint that works with stored masks - no reprocessing!
-      const geminiDataResponse = await fetch(`${API_URL}/prepare-wardrobe-gemini`, {
+      const maskImages = {};
+      const garmentFiles = {};
+
+      // Get mask data for each selected type
+      for (const [type, garmentFile] of Object.entries(selectedReplacements)) {
+        if (selectedItemMasks.visualizations && selectedItemMasks.visualizations[type]) {
+          // Get mask for this type using prepare_wardrobe_gemini
+          const geminiDataResponse = await fetch(`${API_URL}/prepare-wardrobe-gemini`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              image_url: selectedItem.url,
+              mask_data: selectedItemMasks,
+              clothing_type: type
+            }),
+          });
+
+          const geminiData = await geminiDataResponse.json();
+          
+          if (geminiData.success) {
+            maskImages[type] = `data:image/png;base64,${geminiData.mask_image}`;
+            garmentFiles[type] = garmentFile;
+          }
+        }
+      }
+
+      if (Object.keys(maskImages).length === 0) {
+        alert('No valid clothing items found');
+        return;
+      }
+
+      // Get original image in base64
+      const originalResponse = await fetch(`${API_URL}/prepare-wardrobe-gemini`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          image_url: selectedItem.url,  // Firebase Storage URL
-          mask_data: selectedItemMasks,  // Already loaded mask data
-          clothing_type: selectedClothingType
+          image_url: selectedItem.url,
+          mask_data: selectedItemMasks,
+          clothing_type: Object.keys(maskImages)[0] // Just to get the original image
         }),
       });
 
-      const geminiData = await geminiDataResponse.json();
-      
-      if (!geminiData.success) {
-        throw new Error(geminiData.error || 'Failed to prepare image data');
+      const originalData = await originalResponse.json();
+      if (!originalData.success) {
+        alert('Failed to prepare original image');
+        return;
       }
 
-      // Perform the try-on
-      const tryOnResponse = await fetch(`${API_URL}/gemini-tryon`, {
+      // Always use multi-item endpoint
+      const tryOnResponse = await fetch(`${API_URL}/gemini-tryon-multiple`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          person_image: `data:image/png;base64,${geminiData.original_image}`,
-          mask_image: `data:image/png;base64,${geminiData.mask_image}`,
-          garment_file: selectedGarment,
-          clothing_type: selectedClothingType
+          person_image: `data:image/png;base64,${originalData.original_image}`,
+          mask_images: maskImages,
+          garment_files: garmentFiles,
+          clothing_types: Object.keys(maskImages)
         }),
       });
 
@@ -150,13 +202,6 @@ function Wardrobe({ user, onBack }) {
       if (tryOnData.success) {
         setTryOnResult(tryOnData.result_image);
         setShowTryOnModal(true);
-        // Store parameters for redo
-        setLastTryOnParams({
-          person_image: `data:image/png;base64,${geminiData.original_image}`,
-          mask_image: `data:image/png;base64,${geminiData.mask_image}`,
-          garment_file: selectedGarment,
-          clothing_type: selectedClothingType
-        });
       } else {
         alert(`Error: ${tryOnData.error}`);
       }
@@ -335,6 +380,11 @@ function Wardrobe({ user, onBack }) {
                 onClick={() => {
                   if (selectedItemMasks) {
                     setShowTryOnModal(true);
+                  // Reset selections when opening try-on modal
+                  setSelectedReplacements({});
+                  setSelectedGarment('');
+                  setSelectedClothingType('shirt');
+                  setShowOriginalImage(false); // Reset toggle
                   } else {
                     alert('Please wait for mask data to load');
                   }
@@ -369,39 +419,87 @@ function Wardrobe({ user, onBack }) {
             
             {!tryOnResult && (
               <div className="try-on-controls">
-                <div className="control-group">
-                  <label>Clothing Type:</label>
-                  <select
-                    value={selectedClothingType}
-                    onChange={(e) => setSelectedClothingType(e.target.value)}
-                    disabled={tryOnProcessing}
-                  >
-                    <option value="shirt">Shirt</option>
-                    <option value="pants">Pants</option>
-                    <option value="shoes">Shoes</option>
-                  </select>
+                <div className="clothing-type-selector">
+                  <h3>Select Clothing Type:</h3>
+                  <div className="segment-tiles">
+                    {selectedItemMasks && selectedItemMasks.visualizations && 
+                      Object.entries(selectedItemMasks.classifications || {}).map(([type, count]) => {
+                        if (count > 0 && selectedItemMasks.visualizations[type]) {
+                          const visualization = selectedItemMasks.visualizations[type];
+                          let imageSrc;
+                          
+                          // Handle both base64 and URL formats
+                          if (selectedItemMasks.isUrlBased) {
+                            const encodedPath = encodeURIComponent(visualization);
+                            imageSrc = `https://firebasestorage.googleapis.com/v0/b/kapdaai-local.appspot.com/o/${encodedPath}?alt=media`;
+                          } else if (visualization.startsWith('http')) {
+                            imageSrc = visualization;
+                          } else {
+                            imageSrc = `data:image/png;base64,${visualization}`;
+                          }
+                          
+                          return (
+                            <div
+                              key={type}
+                              className={`segment-tile ${selectedClothingType === type ? 'selected' : ''}`}
+                              onClick={() => {
+                                setSelectedClothingType(type);
+                                setSelectedGarment(selectedReplacements[type] || '');
+                              }}
+                            >
+                              <img src={imageSrc} alt={`${type} mask`} />
+                              <p>{type.charAt(0).toUpperCase() + type.slice(1)}</p>
+                              {selectedReplacements[type] && (
+                                <div className="checkmark">✓</div>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })
+                    }
+                  </div>
                 </div>
-                
-                <div className="control-group">
-                  <label>Select Garment:</label>
-                  <select
-                    value={selectedGarment}
-                    onChange={(e) => setSelectedGarment(e.target.value)}
-                    disabled={tryOnProcessing}
-                  >
-                    <option value="">-- Select a garment --</option>
-                    {garments.map(garment => (
-                      <option key={garment} value={garment}>
-                        {garment}
-                      </option>
+
+                <div className="garment-selector">
+                  <h3>Select {selectedClothingType.charAt(0).toUpperCase() + selectedClothingType.slice(1)} to Try:</h3>
+                  <div className="garment-grid">
+                    {garments[selectedClothingType] && garments[selectedClothingType].map((garment) => (
+                      <div
+                        key={garment}
+                        className={`garment-tile ${selectedGarment === garment ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (selectedGarment === garment) {
+                            // Clicking the same garment deselects it
+                            setSelectedGarment('');
+                            setSelectedReplacements(prev => {
+                              const newReplacements = {...prev};
+                              delete newReplacements[selectedClothingType];
+                              return newReplacements;
+                            });
+                          } else {
+                            // Select new garment
+                            setSelectedGarment(garment);
+                            setSelectedReplacements(prev => ({
+                              ...prev,
+                              [selectedClothingType]: garment
+                            }));
+                          }
+                        }}
+                      >
+                        <img 
+                          src={`${API_URL}/static/garments/${garment}`} 
+                          alt={garment}
+                        />
+                      </div>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <button
                   className="try-on-button"
                   onClick={performGeminiTryOn}
-                  disabled={tryOnProcessing || !selectedGarment}
+                  disabled={tryOnProcessing || Object.keys(selectedReplacements).length === 0}
                   style={{ marginTop: '20px' }}
                 >
                   {tryOnProcessing ? 'Processing...' : '✨ Generate Try-On'}
@@ -411,57 +509,78 @@ function Wardrobe({ user, onBack }) {
             
             {tryOnResult && (
               <div className="try-on-results">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '20px' }}>
-                  <div>
-                    <h4>Original</h4>
+                <div className="results-layout">
+                  <div className="result-main">
+                    <div className="result-header">
+                      <h3>{showOriginalImage ? 'Original Image' : 'Generated Result'}</h3>
+                      <label className="switch-toggle">
+                        <input 
+                          type="checkbox"
+                          checked={showOriginalImage}
+                          onChange={() => setShowOriginalImage(!showOriginalImage)}
+                        />
+                        <span className="slider"></span>
+                      </label>
+                    </div>
                     <img 
-                      src={selectedItem.url} 
-                      alt="Original" 
-                      style={{ width: '100%', borderRadius: '8px' }}
+                      src={showOriginalImage ? selectedItem.url : `data:image/png;base64,${tryOnResult}`} 
+                      alt={showOriginalImage ? "Original" : "Try-on result"} 
+                      className="result-image"
                     />
                   </div>
-                  <div>
-                    <h4>Garment</h4>
-                    {selectedGarment && (
+
+                  <div className="items-used">
+                    <h3>Items Used</h3>
+                    <div className="items-tiles">
+                    <div className="item-tile">
+                      <h4>Original</h4>
                       <img 
-                        src={`${API_URL}/static/garments/${selectedGarment}`} 
-                        alt="Garment" 
-                        style={{ width: '100%', borderRadius: '8px', backgroundColor: '#f8f8f8' }}
+                        src={selectedItem.url} 
+                        alt="Original"
                       />
-                    )}
+                    </div>
+                    
+                    {Object.entries(selectedReplacements).map(([type, garmentFile]) => (
+                      <div key={type} className="item-tile">
+                        <h4>{type.charAt(0).toUpperCase() + type.slice(1)}</h4>
+                        <img 
+                          src={`${API_URL}/static/garments/${garmentFile}`} 
+                          alt={`${type} garment`}
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <h4>Try-On Result</h4>
-                    <img 
-                      src={`data:image/png;base64,${tryOnResult}`} 
-                      alt="Try-on result" 
-                      style={{ width: '100%', borderRadius: '8px' }}
-                    />
+                  
+                  <div className="result-actions">
+                    <button
+                      className="try-on-button secondary"
+                      onClick={redoTryOn}
+                      disabled={tryOnProcessing}
+                    >
+                      {tryOnProcessing ? 'Regenerating...' : '🔄 Redo Try-On'}
+                    </button>
+                    
+                    <button
+                      className={`try-on-button store-button ${showStoredTick ? 'stored' : ''}`}
+                      onClick={handleStoreTryOn}
+                      disabled={showStoredTick}
+                    >
+                      {showStoredTick ? '✓ Stored' : '💾 Store'}
+                    </button>
+                    
+                    <button
+                      className="try-on-button"
+                      onClick={() => {
+                        setTryOnResult(null);
+                        setSelectedReplacements({});
+                        setSelectedGarment('');
+                        setSelectedClothingType('shirt');
+                      }}
+                    >
+                      Try Another Outfit
+                    </button>
                   </div>
                 </div>
-                
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '20px' }}>
-                  <button
-                    className="try-on-button"
-                    onClick={redoTryOn}
-                    disabled={tryOnProcessing}
-                    style={{ 
-                      backgroundColor: '#9c27b0',
-                      opacity: tryOnProcessing ? 0.7 : 1
-                    }}
-                  >
-                    {tryOnProcessing ? 'Regenerating...' : '🔄 Redo Try-On'}
-                  </button>
-                  
-                  <button
-                    className="try-on-button"
-                    onClick={() => {
-                      setTryOnResult(null);
-                      setSelectedClothingType('shirt');
-                    }}
-                  >
-                    Try Another Garment
-                  </button>
                 </div>
               </div>
             )}

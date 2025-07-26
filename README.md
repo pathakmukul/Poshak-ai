@@ -15,7 +15,8 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 - **Digital Wardrobe**: Personal clothing collection with Firebase storage and detailed item view
 - **Closet View**: Browse extracted clothing items in a clean grid layout with transparent backgrounds
 - **Interactive Mask Editing**: Edit and refine AI detections with visual feedback and category-focused editing
-- **Virtual Try-On**: Gemini API integration for AI-powered outfit visualization
+- **Virtual Try-On**: Gemini API integration for AI-powered outfit visualization with multi-item support
+- **Virtual Closet**: Save and manage your favorite virtual try-on results
 
 ### Architecture Features
 - **Unified Backend Architecture**: Flask serves as the single API gateway for all Firebase operations
@@ -57,11 +58,13 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 ## Project Structure
 
 ### Frontend Files
-- `src/App.js` - Clean landing page with navigation to Wardrobe and Closet views
+- `src/App.js` - Clean landing page with navigation to Wardrobe, Closet, and Virtual Closet views
 - `src/Login.js` - User login/signup interface
 - `src/Wardrobe.js` - Digital wardrobe with full photos and virtual try-on capabilities
 - `src/Closet.js` - NEW! Clothing item browser showing extracted items with transparent backgrounds
 - `src/closetService.js` - NEW! Service for fetching and organizing clothing items from Firebase
+- `src/VirtualCloset.js` - Browse and manage saved virtual try-on results
+- `src/virtualClosetService.js` - Service for managing virtual closet items via Flask
 - `src/UploadSegmentModal.js` - Full-screen workflow for image upload and segmentation
 - `src/firebase.js` - Firebase configuration and initialization
 - `src/storageService.js` - Firebase storage operations for images and masks
@@ -109,11 +112,15 @@ KapdaAI is an intelligent wardrobe management system that automatically detects 
 - `GET /firebase/clothing-counts/<user_id>` - Get just the counts for smart sync (lightweight)
 - `GET /firebase/mask-data/<user_id>/<image_name>` - Get mask data for specific image
 - `POST /firebase/delete-image` - Delete image and associated data
+- `POST /firebase/virtual-closet` - Save virtual try-on result to Virtual Closet
+- `GET /firebase/virtual-closet/<user_id>` - Get all virtual closet items for a user
+- `DELETE /firebase/virtual-closet/<user_id>/<item_id>` - Delete a virtual closet item
 
 ### Gemini Endpoints
 - `POST /get-gemini-data` - Get outfit details and fashion advice from Gemini
 - `POST /prepare-wardrobe-gemini` - Prepare wardrobe items for virtual try-on
 - `POST /gemini-tryon` - Perform virtual try-on with selected items
+- `POST /gemini-tryon-multiple` - Perform multi-item virtual try-on (shirts, pants, shoes)
 
 ## Running the Application
 
@@ -177,16 +184,18 @@ KapdaAI uses the Segformer B2 Clothes model (MIT licensed) with two deployment o
 - **User-Controlled Saving**: Preview segmentation results before saving (mobile)
 - **Content-Aware Display**: Generous padding (50%) ensures full clothing items are visible
 - **Pull-to-Refresh**: Manual sync option in mobile app
+- **Virtual Closet**: Save favorite virtual try-on results for future reference
 
 ### Technical Features
 - **Single Model Architecture**: Segformer B2 handles both segmentation and classification
 - **18 Clothing Categories**: Detects shirts, pants, dresses, shoes, accessories, and more
 - **Transparent Backgrounds**: All clothing extractions use RGBA format
-- **Dual Views**: Wardrobe (full photos) and Closet (extracted items)
+- **Triple Views**: Wardrobe (full photos), Closet (extracted items), Virtual Closet (try-on results)
 - **Visual Feedback**: Color-coded mask editing in web app
 - **Optimized Endpoints**: Single API call returns all clothing items
 - **Local Caching**: Mobile app uses AsyncStorage for offline support
 - **Smart Sync Strategy**: Intelligent count-based synchronization only when needed
+- **Multi-Item Virtual Try-On**: Try multiple garments simultaneously using Gemini 2.0 Flash
 
 ## Segformer Model Details
 

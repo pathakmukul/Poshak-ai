@@ -6,9 +6,10 @@ A React Native mobile application for KapdaAI - your AI-powered wardrobe assista
 
 ### Core Features
 - **🤖 AI Clothing Segmentation**: Upload photos and automatically detect clothing items (shirts, pants, shoes)
-- **👕 Digital Wardrobe**: View and manage your full-body clothing photos
+- **👕 Digital Wardrobe**: View and manage your full-body clothing photos with multi-item virtual try-on
 - **🗄️ Digital Closet**: Browse individual clothing items with smart categorization
-- **👗 Virtual Try-On**: Try clothes virtually using Gemini AI (OpenAI Switch screen)
+- **👗 Virtual Try-On**: Try multiple garments at once using Gemini AI
+- **📸 Virtual Closet**: Save and manage your favorite try-on results
 - **🔐 User Authentication**: Secure Firebase-based login system
 
 ### Performance Features
@@ -76,13 +77,15 @@ mobile-app/
 │   ├── screens/                     # App screens
 │   │   ├── Home.js                 # Main dashboard
 │   │   ├── Login.js                # Authentication
-│   │   ├── Wardrobe.js             # Full person images gallery
+│   │   ├── Wardrobe.js             # Full person images gallery & virtual try-on
 │   │   ├── Closet.js               # Individual clothing items
-│   │   ├── OpenAISwitch.js         # Virtual try-on with Gemini
+│   │   ├── VirtualCloset.js        # Saved virtual try-on results
+│   │   ├── OpenAISwitch.js         # AI outfit generation
 │   │   └── UploadSegmentModal.js   # Image upload & segmentation
 │   ├── services/                    # Business logic
 │   │   ├── storageService.js       # Firebase integration
 │   │   ├── closetService.js        # Closet data management with smart sync
+│   │   ├── virtualClosetService.js # Virtual closet data management
 │   │   └── cacheService.js         # Local caching with session tracking
 │   ├── components/                  # Reusable components
 │   │   └── SmartCropImage.js       # Intelligent image display
@@ -111,12 +114,27 @@ mobile-app/
 - **Instant Updates**: New items cached immediately after segmentation
 - **Offline Mode**: Full functionality without internet
 
+### Virtual Try-On System
+- **Multi-Item Selection**: Select multiple garments (shirt, pants, shoes) to try on simultaneously
+- **Visual Feedback**: Green checkmarks show selected items
+- **Try-On Results**: View generated image with items used
+- **Save Results**: Store favorite try-ons to Virtual Closet
+- **Quick Actions**: Redo, back, and store buttons for seamless workflow
+
+### Virtual Closet System
+- **Local-First Storage**: Virtual try-on results saved to AsyncStorage instantly
+- **Background Sync**: Automatic sync to Firebase Storage via Flask endpoints
+- **Offline Support**: Browse saved try-ons without internet connection
+- **Same Caching Strategy**: Uses identical smart sync as My Closet feature
+- **Flask Integration**: Uses `/firebase/virtual-closet` endpoints for consistency
+
 ### UI/UX Highlights
 - **Dark Theme**: Consistent dark mode design
-- **No Popups**: Seamless in-modal experience
+- **Modal Experience**: Try-on interface in popup overlay
 - **Fast Navigation**: Instant screen transitions
 - **Pull to Refresh**: Manual sync option
 - **Smart Image Display**: Content-aware with padding
+- **Responsive Design**: Adaptive layouts for different screen sizes
 
 ## 🛠️ Development
 
@@ -170,6 +188,8 @@ eas build -p android
 
 ## 🔮 Future Enhancements
 
+- [x] Virtual Closet for saving try-on results
+- [x] Multi-item virtual try-on
 - [ ] Outfit recommendations based on weather
 - [ ] Social sharing features
 - [ ] Advanced search and filters

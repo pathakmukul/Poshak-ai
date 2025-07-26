@@ -135,57 +135,137 @@ class GeminiService:
             if not image_url or not mask_data:
                 return {'error': 'Missing image_url or mask_data'}, 400
                 
-            # Download image from Firebase
-            print(f"Downloading wardrobe image from: {image_url}")
-            response = requests.get(image_url)
-            response.raise_for_status()
-            
-            # Convert to numpy array
-            nparr = np.frombuffer(response.content, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                return {'error': 'Failed to decode image from URL'}, 500
-                
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            
-            # Get the visualization for the selected clothing type
+            # Check if we have person_only image in visualizations
             visualizations = mask_data.get('visualizations', {})
-            mask_base64 = visualizations.get(clothing_type)
+            person_only_base64 = visualizations.get('person_only')
             
-            if not mask_base64:
-                return {'error': f'No {clothing_type} mask found in stored data'}, 400
+            if person_only_base64:
+                # Use person_only image which was generated at same resolution as masks
+                print(f"Using person_only image from visualizations")
+                person_img_data = base64.b64decode(person_only_base64)
+                person_pil = Image.open(BytesIO(person_img_data))
                 
-            # The stored visualization is already a mask image, but we need to convert it to RGBA format
-            # Decode the stored mask visualization
-            mask_img_data = base64.b64decode(mask_base64)
-            mask_pil = Image.open(BytesIO(mask_img_data))
-            mask_np = np.array(mask_pil)
-            
-            # Extract the mask from the visualization
-            # The visualization has colored regions for clothing items
-            # We need to create a binary mask where clothing pixels are True
-            if len(mask_np.shape) == 3:
-                # Convert to grayscale if needed
-                mask_gray = cv2.cvtColor(mask_np, cv2.COLOR_RGB2GRAY)
+                # Convert RGBA to RGB if needed
+                if person_pil.mode == 'RGBA':
+                    # Create white background
+                    background = Image.new('RGB', person_pil.size, (255, 255, 255))
+                    background.paste(person_pil, mask=person_pil.split()[3])
+                    person_pil = background
+                elif person_pil.mode != 'RGB':
+                    person_pil = person_pil.convert('RGB')
+                
+                image_rgb = np.array(person_pil)
+                h, w = image_rgb.shape[:2]
+                print(f"\n=== DIMENSION CHECK IN prepare_wardrobe_gemini ===")
+                print(f"Using person_only image: {w}x{h} (width x height)")
+                print(f"Image shape: {image_rgb.shape}")
             else:
-                mask_gray = mask_np
+                # Fallback to downloading from URL
+                print(f"person_only not found, downloading from: {image_url}")
+                response = requests.get(image_url)
+                response.raise_for_status()
                 
-            # Create binary mask where non-zero pixels are clothing
-            binary_mask = mask_gray > 0
+                # Convert to numpy array
+                nparr = np.frombuffer(response.content, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    return {'error': 'Failed to decode image from URL'}, 500
+                    
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                h, w = image_rgb.shape[:2]
+                print(f"\n=== DIMENSION CHECK IN prepare_wardrobe_gemini ===")
+                print(f"Downloaded image from Firebase: {w}x{h} (width x height)")
+                print(f"Image shape: {image_rgb.shape}")
             
-            # Convert to RGBA format for Gemini (transparent where clothing is)
-            mask_rgba = np.zeros((binary_mask.shape[0], binary_mask.shape[1], 4), dtype=np.uint8)
-            mask_rgba[:, :, 3] = (~binary_mask * 255).astype(np.uint8)  # Inverted for transparency
-            mask_pil_rgba = Image.fromarray(mask_rgba, mode='RGBA')
+            # Get the binary mask for the selected clothing type
+            binary_masks = mask_data.get('binary_masks', {})
+            mask_base64 = binary_masks.get(clothing_type)
+            
+            # Fallback to visualizations if binary_masks not available (for backward compatibility)
+            if not mask_base64:
+                visualizations = mask_data.get('visualizations', {})
+                mask_base64 = visualizations.get(clothing_type)
+                
+                if not mask_base64:
+                    return {'error': f'No {clothing_type} mask found in stored data'}, 400
+                    
+                # If using visualization, we need to extract the mask
+                print(f"WARNING: Using visualization instead of binary mask for {clothing_type}")
+                mask_img_data = base64.b64decode(mask_base64)
+                mask_pil = Image.open(BytesIO(mask_img_data))
+                mask_np = np.array(mask_pil)
+                
+                # Resize to match original image if needed
+                if mask_np.shape[:2] != (h, w):
+                    print(f"Resizing visualization from {mask_np.shape[:2]} to {(h, w)}")
+                    mask_pil = mask_pil.resize((w, h), Image.Resampling.LANCZOS)
+                    mask_np = np.array(mask_pil)
+                
+                # Create RGBA mask for Gemini - transparent where to keep original
+                # This matches the old implementation
+                mask_rgba = np.zeros((h, w, 4), dtype=np.uint8)
+                
+                if len(mask_np.shape) == 3:
+                    diff = np.abs(mask_np.astype(float) - image_rgb.astype(float))
+                    binary_mask = np.any(diff > 30, axis=2)
+                else:
+                    binary_mask = mask_np > 0
+                
+                # Set alpha channel - transparent (0) where to keep original, opaque (255) where to replace
+                mask_rgba[:, :, 3] = (binary_mask * 255).astype(np.uint8)
+                mask_pil = Image.fromarray(mask_rgba, mode='RGBA')
+            else:
+                # Using stored binary mask - convert to RGBA
+                print(f"Using stored binary mask for {clothing_type}")
+                mask_img_data = base64.b64decode(mask_base64)
+                mask_pil = Image.open(BytesIO(mask_img_data))
+                
+                print(f"Loaded binary mask size: {mask_pil.size} (width x height)")
+                print(f"Mask mode: {mask_pil.mode}")
+                
+                # Resize if needed
+                if mask_pil.size != (w, h):
+                    print(f"WARNING: Mask size {mask_pil.size} doesn't match image size {(w, h)}")
+                    print(f"Resizing mask from {mask_pil.size} to {(w, h)}")
+                    mask_pil = mask_pil.resize((w, h), Image.Resampling.LANCZOS)
+                
+                # Convert binary mask to RGBA - transparent where to keep original
+                mask_np = np.array(mask_pil)
+                mask_rgba = np.zeros((h, w, 4), dtype=np.uint8)
+                # Where mask is white (255), make opaque (alpha=255) for replacement
+                # Where mask is black (0), make transparent (alpha=0) to keep original
+                mask_rgba[:, :, 3] = mask_np
+                mask_pil = Image.fromarray(mask_rgba, mode='RGBA')
+            
+            # Debug: Save mask to verify
+            import os
+            debug_dir = os.path.join(os.path.dirname(__file__), 'debug_masks')
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_path = os.path.join(debug_dir, f'mask_{clothing_type}_{int(time.time())}.png')
+            mask_pil.save(debug_path)
+            print(f"DEBUG: Saved mask to {debug_path}")
+            print(f"DEBUG: Mask size: {mask_pil.size}")
+            print(f"DEBUG: Original image shape: {image_rgb.shape}")
+            print(f"DEBUG: Mask mode: {mask_pil.mode} (RGBA - transparent=keep, opaque=replace)")
+            
+            # Ensure mask and image have EXACT same dimensions
+            if mask_pil.size != (w, h):
+                print(f"ERROR: Mask size {mask_pil.size} doesn't match image size {(w, h)}")
+                mask_pil = mask_pil.resize((w, h), Image.Resampling.LANCZOS)
             
             # Convert to base64
             buffer = BytesIO()
-            mask_pil_rgba.save(buffer, format="PNG")
-            mask_base64_rgba = base64.b64encode(buffer.getvalue()).decode()
+            mask_pil.save(buffer, format="PNG")
+            mask_base64 = base64.b64encode(buffer.getvalue()).decode()
             
             # Convert original image to base64
             original_pil = Image.fromarray(image_rgb)
+            print(f"\n=== FINAL CHECK BEFORE SENDING TO GEMINI ===")
+            print(f"Original image size: {original_pil.size} (width x height)")
+            print(f"Mask size: {mask_pil.size} (width x height)")
+            print(f"Do they match? {original_pil.size == mask_pil.size}")
+            
             buffer2 = BytesIO()
             original_pil.save(buffer2, format="PNG")
             original_base64 = base64.b64encode(buffer2.getvalue()).decode()
@@ -193,7 +273,7 @@ class GeminiService:
             return {
                 'success': True,
                 'original_image': original_base64,
-                'mask_image': mask_base64_rgba
+                'mask_image': mask_base64
             }, 200
             
         except Exception as e:
@@ -226,18 +306,77 @@ class GeminiService:
             generation_config = {
                 "response_modalities": ["TEXT", "IMAGE"]
             }
+            
+            # Add safety settings to reduce false positives
+            safety_settings = [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                }
+            ]
+            
             model = genai.GenerativeModel(
                 'gemini-2.0-flash-preview-image-generation',
-                generation_config=generation_config
+                generation_config=generation_config,
+                safety_settings=safety_settings
             )
             
             # Decode person image from base64
-            person_img_data = base64.b64decode(person_image.split(',')[1])
-            person_pil = Image.open(BytesIO(person_img_data)).convert('RGB')
+            try:
+                if ',' in person_image:
+                    person_img_data = base64.b64decode(person_image.split(',')[1])
+                else:
+                    person_img_data = base64.b64decode(person_image)
+                person_pil = Image.open(BytesIO(person_img_data)).convert('RGB')
+                print(f"Person image size: {person_pil.size}")
+            except Exception as e:
+                print(f"Error decoding person image: {str(e)}")
+                return {'error': f'Failed to decode person image: {str(e)}'}, 400
             
             # Decode mask image from base64
-            mask_img_data = base64.b64decode(mask_image.split(',')[1])
-            mask_pil = Image.open(BytesIO(mask_img_data))  # Keep as RGBA
+            try:
+                if ',' in mask_image:
+                    mask_img_data = base64.b64decode(mask_image.split(',')[1])
+                else:
+                    mask_img_data = base64.b64decode(mask_image)
+                mask_pil = Image.open(BytesIO(mask_img_data))
+                print(f"Mask image size: {mask_pil.size}, mode: {mask_pil.mode}")
+                
+                # CRITICAL: Ensure mask is same size as person image
+                if mask_pil.size != person_pil.size:
+                    print(f"WARNING: Mask size {mask_pil.size} doesn't match person size {person_pil.size}")
+                    print(f"Resizing mask to match person image")
+                    mask_pil = mask_pil.resize(person_pil.size, Image.Resampling.LANCZOS)
+                    
+                # Keep mask as RGBA if it's already RGBA, otherwise convert
+                if mask_pil.mode == 'RGBA':
+                    print(f"Mask is already in RGBA mode")
+                elif mask_pil.mode == 'L':
+                    print(f"Converting grayscale mask to RGBA")
+                    # Convert L mode to RGBA - use the grayscale value as alpha
+                    mask_np = np.array(mask_pil)
+                    mask_rgba = np.zeros((mask_pil.size[1], mask_pil.size[0], 4), dtype=np.uint8)
+                    mask_rgba[:, :, 3] = mask_np  # Use grayscale as alpha
+                    mask_pil = Image.fromarray(mask_rgba, mode='RGBA')
+                else:
+                    print(f"Converting mask from {mask_pil.mode} to RGBA")
+                    mask_pil = mask_pil.convert('RGBA')
+                    
+            except Exception as e:
+                print(f"Error decoding mask image: {str(e)}")
+                return {'error': f'Failed to decode mask image: {str(e)}'}, 400
             
             # Load garment image - look in parent directory (react-app)
             backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -245,20 +384,51 @@ class GeminiService:
             garment_path = os.path.join(parent_dir, 'data', 'sample_images', 'garments', garment_file)
             garment_pil = Image.open(garment_path).convert('RGB')
             
-            # Create prompt - EXACT SAME AS streamlit_app.py
-            prompt = f"""Replace the {clothing_type} in the person image with the {clothing_type} from the reference image. 
-            Use the provided mask to identify exactly which area to replace. 
-            Maintain the person's pose, lighting, skin tone, and background. 
-            Ensure the new {clothing_type} fits naturally and matches the original image style.
-            Only change the clothing in the masked area, keep everything else identical."""
+            # Create prompt - clearer about what each image is
+            prompt = f"""Virtual try-on task: Replace the {clothing_type} in the person image.
+
+Images provided (in order):
+1. Person wearing original clothing
+2. New {clothing_type} to try on
+3. Mask showing which area to replace (opaque areas = replace, transparent = keep original)
+
+Please replace only the masked area with the new {clothing_type}, keeping everything else unchanged."""
             
-            # Prepare inputs for Gemini - EXACT SAME AS streamlit_app.py
+            # FINAL VERIFICATION before sending to Gemini
+            print(f"FINAL VERIFICATION before Gemini:")
+            print(f"  Person: size={person_pil.size}, mode={person_pil.mode}")
+            print(f"  Garment: size={garment_pil.size}, mode={garment_pil.mode}")
+            print(f"  Mask: size={mask_pil.size}, mode={mask_pil.mode}")
+            
+            if person_pil.size != mask_pil.size:
+                print(f"CRITICAL ERROR: Person and mask sizes don't match!")
+                return {'error': 'Person and mask sizes do not match'}, 500
+            
+            # Prepare inputs for Gemini - CORRECT ORDER: Person, Garment, Mask
             inputs = [prompt, person_pil, garment_pil, mask_pil]
             
             # Call Gemini API
             start_time = time.time()
-            print(f"Sending to Gemini: {len(inputs)} inputs (prompt + {len(inputs)-1} images)")
-            response = model.generate_content(inputs)
+            print(f"Sending to Gemini: {len(inputs)} inputs (prompt + {len(inputs)-1} images)", flush=True)
+            print(f"Garment file: {garment_file}", flush=True)
+            print(f"Clothing type: {clothing_type}", flush=True)
+            
+            try:
+                response = model.generate_content(inputs)
+                
+                # Debug the response
+                print(f"Gemini response received", flush=True)
+                if hasattr(response, 'prompt_feedback'):
+                    print(f"Prompt feedback: {response.prompt_feedback}", flush=True)
+                if hasattr(response, 'candidates'):
+                    print(f"Number of candidates: {len(response.candidates) if response.candidates else 0}", flush=True)
+                    if not response.candidates:
+                        print(f"Full response object: {vars(response)}", flush=True)
+            except Exception as api_error:
+                print(f"Gemini API call failed: {str(api_error)}", flush=True)
+                import traceback
+                traceback.print_exc()
+                return {'error': f'Gemini API call failed: {str(api_error)}'}, 500
             
             # Check if response has candidates - EXACT SAME AS streamlit_app.py
             if response.candidates and len(response.candidates) > 0:
@@ -302,6 +472,220 @@ class GeminiService:
                                 }, 200
                             except:
                                 continue
+                
+                return {'error': 'Gemini returned no image data in response'}, 500
+            else:
+                return {'error': 'Gemini returned no candidates'}, 500
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'error': f'Gemini API error: {str(e)}'}, 500
+    
+    def gemini_tryon_multiple(self, person_image, mask_images, garment_files, clothing_types):
+        """Test multi-item virtual try-on using Gemini
+        
+        Args:
+            person_image: Base64 encoded original person image
+            mask_images: Dict of clothing_type -> base64 encoded RGBA mask image
+            garment_files: Dict of clothing_type -> garment filename
+            clothing_types: List of clothing types to replace
+            
+        Returns:
+            dict: Success response with result image or error response
+            int: HTTP status code
+        """
+        try:
+            if not GEMINI_AVAILABLE:
+                return {'error': 'Google GenAI SDK not installed'}, 500
+            
+            # Get API key
+            if not self.api_key:
+                return {'error': 'GEMINI_API_KEY not set in .env file'}, 500
+            
+            # Configure Gemini with IMAGE GENERATION model
+            generation_config = {
+                "response_modalities": ["TEXT", "IMAGE"]
+            }
+            
+            # Add safety settings to reduce false positives
+            safety_settings = [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                }
+            ]
+            
+            model = genai.GenerativeModel(
+                'gemini-2.0-flash-preview-image-generation',
+                generation_config=generation_config,
+                safety_settings=safety_settings
+            )
+            
+            # Decode person image from base64
+            try:
+                if ',' in person_image:
+                    person_img_data = base64.b64decode(person_image.split(',')[1])
+                else:
+                    person_img_data = base64.b64decode(person_image)
+                person_pil = Image.open(BytesIO(person_img_data)).convert('RGB')
+                print(f"Person image size: {person_pil.size}")
+            except Exception as e:
+                print(f"Error decoding person image: {str(e)}")
+                return {'error': f'Failed to decode person image: {str(e)}'}, 400
+            
+            # Create a combined RGBA mask
+            w, h = person_pil.size  # PIL returns (width, height)
+            print(f"Person PIL image: width={w}, height={h}")
+            combined_mask_np = np.zeros((h, w, 4), dtype=np.uint8)  # RGBA mask
+            print(f"Created RGBA mask array with shape: {combined_mask_np.shape}")
+            
+            # Process each mask and combine them
+            for clothing_type in clothing_types:
+                if clothing_type not in mask_images:
+                    continue
+                    
+                mask_image = mask_images[clothing_type]
+                try:
+                    if ',' in mask_image:
+                        mask_img_data = base64.b64decode(mask_image.split(',')[1])
+                    else:
+                        mask_img_data = base64.b64decode(mask_image)
+                    mask_pil = Image.open(BytesIO(mask_img_data))
+                    
+                    # Resize mask to match person image size if needed
+                    if mask_pil.size != person_pil.size:
+                        print(f"WARNING: Mask for {clothing_type} has size {mask_pil.size} but person has {person_pil.size}")
+                        print(f"Resizing mask to match person image")
+                        mask_pil = mask_pil.resize(person_pil.size, Image.Resampling.LANCZOS)
+                        print(f"After resize: mask size = {mask_pil.size}")
+                    
+                    mask_array = np.array(mask_pil)
+                    
+                    # Combine RGBA masks
+                    if len(mask_array.shape) == 2:  # Grayscale mask
+                        # Convert to RGBA - use grayscale as alpha
+                        combined_mask_np[:, :, 3] = np.maximum(combined_mask_np[:, :, 3], mask_array)
+                    elif mask_array.shape[2] >= 4:  # RGBA mask
+                        # Combine alpha channels - take maximum (union of masks)
+                        combined_mask_np[:, :, 3] = np.maximum(combined_mask_np[:, :, 3], mask_array[:, :, 3])
+                    else:  # RGB mask
+                        # Convert to grayscale and use as alpha
+                        mask_gray = cv2.cvtColor(mask_array, cv2.COLOR_RGB2GRAY)
+                        combined_mask_np[:, :, 3] = np.maximum(combined_mask_np[:, :, 3], mask_gray)
+                    
+                except Exception as e:
+                    print(f"Error processing mask for {clothing_type}: {str(e)}")
+                    continue
+            
+            combined_mask_pil = Image.fromarray(combined_mask_np, mode='RGBA')
+            
+            # Debug: Save combined mask
+            debug_dir = os.path.join(os.path.dirname(__file__), 'debug_masks')
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_path = os.path.join(debug_dir, f'combined_mask_{int(time.time())}.png')
+            combined_mask_pil.save(debug_path)
+            print(f"DEBUG: Saved combined mask to {debug_path}")
+            print(f"DEBUG: Combined mask shape: {combined_mask_np.shape}")
+            print(f"DEBUG: Combined mask type: RGBA (transparent=keep, opaque=replace)")
+            
+            # Load all garment images
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            parent_dir = os.path.dirname(backend_dir)  # react-app directory
+            
+            garment_images = []
+            for clothing_type in clothing_types:
+                if clothing_type not in garment_files:
+                    continue
+                    
+                garment_file = garment_files[clothing_type]
+                garment_path = os.path.join(parent_dir, 'data', 'sample_images', 'garments', garment_file)
+                try:
+                    garment_pil = Image.open(garment_path).convert('RGB')
+                    garment_images.append((clothing_type, garment_pil))
+                except Exception as e:
+                    print(f"Error loading garment for {clothing_type}: {str(e)}")
+                    continue
+            
+            # Create prompt for multiple items - clearer about image order
+            items_str = " and ".join(clothing_types)
+            garment_list = "\n".join([f"{i+2}. New {clothing_type} to try on" 
+                                     for i, (clothing_type, _) in enumerate(garment_images)])
+            
+            prompt = f"""Virtual try-on task: Replace the {items_str} in the person image.
+
+Images provided (in order):
+1. Person wearing original clothing
+{garment_list}
+{len(garment_images)+2}. Combined mask showing all areas to replace (opaque = replace, transparent = keep)
+
+Please replace only the masked areas with the corresponding new items, keeping everything else unchanged."""
+            
+            # Prepare inputs for Gemini - CORRECT ORDER: Person, Garments, then Mask
+            inputs = [prompt, person_pil]
+            for _, garment_img in garment_images:
+                inputs.append(garment_img)
+            inputs.append(combined_mask_pil)  # Mask goes last
+            
+            # Call Gemini API
+            start_time = time.time()
+            print(f"Sending to Gemini: {len(inputs)} inputs (prompt + person + mask + {len(garment_images)} garments)", flush=True)
+            print(f"Replacing: {items_str}", flush=True)
+            
+            try:
+                response = model.generate_content(inputs)
+                
+                # Debug the response
+                print(f"Gemini response received", flush=True)
+                if hasattr(response, 'prompt_feedback'):
+                    print(f"Prompt feedback: {response.prompt_feedback}", flush=True)
+                if hasattr(response, 'candidates'):
+                    print(f"Number of candidates: {len(response.candidates) if response.candidates else 0}", flush=True)
+                    if not response.candidates:
+                        print(f"Full response object: {vars(response)}", flush=True)
+            except Exception as api_error:
+                print(f"Gemini API call failed: {str(api_error)}", flush=True)
+                import traceback
+                traceback.print_exc()
+                return {'error': f'Gemini API call failed: {str(api_error)}'}, 500
+            
+            # Check if response has candidates
+            if response.candidates and len(response.candidates) > 0:
+                # Iterate through parts to find image data
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data:
+                        # Get the generated image data directly (no base64 decoding needed)
+                        try:
+                            result_image = Image.open(io.BytesIO(part.inline_data.data))
+                            
+                            # Convert to base64 for frontend
+                            buffer = BytesIO()
+                            result_image.save(buffer, format="PNG")
+                            result_base64 = base64.b64encode(buffer.getvalue()).decode()
+                            
+                            processing_time = time.time() - start_time
+                            
+                            return {
+                                'success': True,
+                                'result_image': result_base64,
+                                'processing_time': processing_time,
+                                'items_replaced': clothing_types
+                            }, 200
+                        except Exception as e:
+                            print(f"Failed to process image data: {str(e)}")
+                            continue
                 
                 return {'error': 'Gemini returned no image data in response'}, 500
             else:
