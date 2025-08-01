@@ -173,8 +173,78 @@ def process_with_segformer(image_path_or_array):
         print(f"API request failed: {str(e)}")
         raise
 
-# Re-export the filter function from local service
-from services.segformer_service import filter_best_clothing_items
+def filter_best_clothing_items(masks):
+    """
+    Filter to keep only the best mask for each clothing category
+    Similar to the post-processing in the original code
+    
+    Args:
+        masks: List of mask dictionaries
+        
+    Returns:
+        List of filtered masks
+    """
+    # Group masks by category
+    category_masks = {
+        'shirt': [],
+        'pants': [],
+        'shoes': [],
+        'dress': [],
+        'skirt': [],
+        'other': []
+    }
+    
+    for mask in masks:
+        label = mask.get('label', '')
+        if label in category_masks:
+            category_masks[label].append(mask)
+        elif label not in ['non_clothing', 'background']:
+            category_masks['other'].append(mask)
+    
+    filtered_masks = []
+    
+    # For shirt, pants, dress, skirt - keep only the largest one
+    for category in ['shirt', 'pants', 'dress', 'skirt']:
+        if category_masks[category]:
+            # Sort by area and take the largest
+            best_mask = max(category_masks[category], key=lambda x: x.get('area', 0))
+            best_mask['skip_viz'] = False
+            filtered_masks.append(best_mask)
+            print(f"  Best {category}: {best_mask['original_label']} (area: {best_mask['area']:,})")
+    
+    # For shoes - keep up to 2 (left and right)
+    if category_masks['shoes']:
+        shoe_masks = sorted(category_masks['shoes'], key=lambda x: x.get('area', 0), reverse=True)
+        
+        if len(shoe_masks) >= 2:
+            # Check if we have distinct left and right shoes
+            left_shoes = [m for m in shoe_masks if 'Left' in m['original_label']]
+            right_shoes = [m for m in shoe_masks if 'Right' in m['original_label']]
+            
+            if left_shoes and right_shoes:
+                # Take best of each
+                left_shoes[0]['skip_viz'] = False
+                right_shoes[0]['skip_viz'] = False
+                filtered_masks.extend([left_shoes[0], right_shoes[0]])
+                print(f"  Left shoe: area {left_shoes[0]['area']:,}")
+                print(f"  Right shoe: area {right_shoes[0]['area']:,}")
+            else:
+                # Just take the two largest
+                shoe_masks[0]['skip_viz'] = False
+                shoe_masks[1]['skip_viz'] = False
+                filtered_masks.extend(shoe_masks[:2])
+        elif shoe_masks:
+            # Only one shoe
+            shoe_masks[0]['skip_viz'] = False
+            filtered_masks.append(shoe_masks[0])
+    
+    # Add back non-clothing masks (but keep them marked as skip_viz)
+    filtered_mask_ids = {id(mask) for mask in filtered_masks}
+    for mask in masks:
+        if mask.get('label') == 'non_clothing' and id(mask) not in filtered_mask_ids:
+            filtered_masks.append(mask)
+    
+    return filtered_masks
 
 # Stub functions for compatibility
 def init_segmentation():

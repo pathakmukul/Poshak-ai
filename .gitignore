@@ -16,14 +16,22 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Firebase
 serviceAccountKey.json
 *-firebase-adminsdk-*.json
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+firebase-debug.log
+firestore-debug.log
+firestore.log
+storage-debug.log
+ui-debug.log
+firebase-export-*/
+firebase-data/
+.firebase/
 
 # Python
 __pycache__/
@@ -34,16 +42,51 @@ __pycache__/
 env/
 venv/
 ENV/
+backend/venv/
+backend/__pycache__/
+backend/services/__pycache__/
+backend/*.log
+backend/flask.log
+backend/.env
+backend/.env.yaml
+backend/requirements-firebase.txt
+backend/check_*.py
+backend/test_*.py
+backend/temp_upload_image.jpg
+backend/services/debug_masks/
 
 # IDE
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
 
 # Temporary files
 *.tmp
 *.temp
+temp/
 
-# Firebase local data
-firebase-data/
-firebase-debug.log
-.firebase/
+# Local test folders - IMPORTANT TO EXCLUDE
+local-backend/
+openai-test/
+vertex-agent-experiment/
+
+# Test images
+test_image.png
+temp_upload_image.jpg
+bluedress.png
+*.heic
+
+# Data folders (keep only sample images)
+data/saved_masks/
+data/twins/
+
+# JSON data files
+qloo_*.json
+
+# Mobile app build files
+mobile-app/mobile-app/.expo/
+mobile-app/mobile-app/android/
+mobile-app/mobile-app/ios/
+
+# Keep public/twins and public/videos for app functionality

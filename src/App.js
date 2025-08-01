@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
+import './globalStyles.css';
 import './App.css';
+import Navigation from './components/Navigation';
+import LuxuryClosetHome from './components/LuxuryClosetHome';
 import Login from './Login';
 import Wardrobe from './Wardrobe';
 import Closet from './Closet';
 import VirtualCloset from './VirtualCloset';
 import OpenAISwitch from './OpenAISwitch';
+import StyleAssistant from './StyleAssistant';
+import MoodBoard from './MoodBoard';
 import { auth, logoutUser } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { preloadUserData } from './dataPreloader';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', 'virtualcloset', or 'openai'
+  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', 'virtualcloset', 'openai', 'styleassistant', or 'moodboard'
 
   // Handle user login
   const handleLogin = (user) => {
     setCurrentUser(user);
+    
+    // Start preloading data if we have the real uid
+    if (user.uid && !user.isAuthenticating) {
+      preloadUserData(user.uid);
+    }
   };
 
   // Handle logout
@@ -33,12 +44,16 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         // User is signed in
-        setCurrentUser({
+        const userData = {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName || user.email.split('@')[0],
           username: user.displayName || user.email.split('@')[0]
-        });
+        };
+        setCurrentUser(userData);
+        
+        // Start preloading data in the background
+        preloadUserData(user.uid);
       } else {
         // User is signed out
         setCurrentUser(null);
@@ -54,114 +69,41 @@ function App() {
     return <Login onLogin={handleLogin} />;
   }
 
-  // Show wardrobe view
-  if (currentView === 'wardrobe') {
-    return <Wardrobe user={currentUser} onBack={() => setCurrentView('main')} />;
-  }
+  // Render different views based on currentView
+  const renderView = () => {
+    switch (currentView) {
+      case 'wardrobe':
+        return <Wardrobe user={currentUser} onBack={() => setCurrentView('main')} />;
+      case 'closet':
+        return <Closet user={currentUser} onBack={() => setCurrentView('main')} />;
+      case 'virtualcloset':
+        return <VirtualCloset user={currentUser} onBack={() => setCurrentView('main')} />;
+      case 'openai':
+        return <OpenAISwitch user={currentUser} onBack={() => setCurrentView('main')} />;
+      case 'styleassistant':
+        return <StyleAssistant user={currentUser} onBack={() => setCurrentView('main')} />;
+      case 'moodboard':
+        return <MoodBoard user={currentUser} onBack={() => setCurrentView('main')} />;
+      default:
+        return renderMainView();
+    }
+  };
 
-  // Show closet view
-  if (currentView === 'closet') {
-    return <Closet user={currentUser} onBack={() => setCurrentView('main')} />;
-  }
+  // Main view content - now shows luxury closet
+  const renderMainView = () => (
+    <LuxuryClosetHome user={currentUser} />
+  );
 
-  // Show virtual closet view
-  if (currentView === 'virtualcloset') {
-    return <VirtualCloset user={currentUser} onBack={() => setCurrentView('main')} />;
-  }
-
-  // Show OpenAI switch view
-  if (currentView === 'openai') {
-    return <OpenAISwitch user={currentUser} onBack={() => setCurrentView('main')} />;
-  }
-
-  // Main view - clean homepage
+  // Main app render
   return (
-    <div className="App">
-      {/* Navigation Header */}
-      <header className="app-header">
-        <nav className="nav-bar">
-          <div className="nav-left">
-            <h1 className="app-title">KapdaAI</h1>
-          </div>
-          <div className="nav-center">
-            <button 
-              className={`nav-button ${currentView === 'main' ? 'active' : ''}`}
-              onClick={() => setCurrentView('main')}
-            >
-              Home
-            </button>
-            <button 
-              className={`nav-button ${currentView === 'wardrobe' ? 'active' : ''}`}
-              onClick={() => setCurrentView('wardrobe')}
-            >
-              Wardrobe
-            </button>
-            <button 
-              className={`nav-button ${currentView === 'closet' ? 'active' : ''}`}
-              onClick={() => setCurrentView('closet')}
-            >
-              Closet
-            </button>
-            <button 
-              className={`nav-button ${currentView === 'virtualcloset' ? 'active' : ''}`}
-              onClick={() => setCurrentView('virtualcloset')}
-            >
-              Virtual Closet
-            </button>
-          </div>
-          <div className="nav-right">
-            <span className="user-name">👤 {currentUser.username}</span>
-            <button className="logout-button" onClick={handleLogout}>
-              Logout
-            </button>
-          </div>
-        </nav>
-      </header>
-
-      {/* Main Content */}
-      <main className="main-content">
-        <div className="welcome-section">
-          <h2>Welcome to KapdaAI</h2>
-          <p>Your AI-powered virtual wardrobe assistant</p>
-          
-          <div className="action-cards">
-            <div className="action-card" onClick={() => setCurrentView('wardrobe')}>
-              <div className="card-icon">📸</div>
-              <h3>Wardrobe</h3>
-              <p>Upload photos and try on virtual outfits</p>
-              <button className="card-button">Open Wardrobe →</button>
-            </div>
-            
-            <div className="action-card" onClick={() => setCurrentView('closet')}>
-              <div className="card-icon">👗</div>
-              <h3>My Closet</h3>
-              <p>View your collection of clothing items</p>
-              <button className="card-button">Open Closet →</button>
-            </div>
-            
-            <div className="action-card" onClick={() => setCurrentView('virtualcloset')}>
-              <div className="card-icon">VC</div>
-              <h3>Virtual Closet</h3>
-              <p>View your saved try-on results</p>
-              <button className="card-button">View Collection →</button>
-            </div>
-            
-            <div className="action-card" onClick={() => setCurrentView('openai')}>
-              <div className="card-icon">🎨</div>
-              <h3>OpenAI Switch</h3>
-              <p>Generate outfits with AI-powered variations</p>
-              <button className="card-button">Try Now →</button>
-            </div>
-            
-            <div className="action-card coming-soon">
-              <div className="card-icon">✨</div>
-              <h3>Style Assistant</h3>
-              <p>Get AI-powered outfit recommendations</p>
-              <span className="coming-soon-badge">Coming Soon</span>
-            </div>
-          </div>
-        </div>
-      </main>
+    <div className="page-container">
+      <Navigation 
+        user={currentUser}
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        onLogout={handleLogout}
+      />
+      {renderView()}
     </div>
   );
 }

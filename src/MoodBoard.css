@@ -1,0 +1,938 @@
+/* MoodBoard - Full Screen Glass Cards */
+
+.moodboard-container {
+  height: 100vh;
+  padding-top: 120px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Subtle controls - keeping as requested */
+.moodboard-controls {
+  position: fixed;
+  top: 85px;
+  right: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 10;
+}
+
+/* Action buttons - Run and Save */
+.action-btn {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
+  padding: 0.3rem 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.run-btn:hover:not(:disabled) {
+  border-color: rgba(78, 205, 196, 0.3);
+  color: rgba(78, 205, 196, 0.9);
+}
+
+.save-btn:hover:not(:disabled) {
+  border-color: rgba(255, 107, 107, 0.3);
+  color: rgba(255, 107, 107, 0.9);
+}
+
+.mode-toggle {
+  display: flex;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 0.3rem 0.8rem;
+  border-radius: 17px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.mode-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.mode-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.trip-input {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
+  padding: 0.3rem 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.75rem;
+  width: 100px;
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.trip-input:focus {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  width: 120px;
+}
+
+.trip-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.location-text {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.75rem;
+  font-weight: 300;
+}
+
+/* Moodboard absolute positioning layout */
+.moodboard-grid {
+  position: relative;
+  z-index: 1;
+  padding: 1.5rem;
+  width: 100%;
+  height: calc(100vh - 140px);
+  margin: 0 auto;
+}
+
+/* Glass card base */
+.glass-card {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(40px) saturate(150%);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  padding: 1rem;
+  transition: all 0.4s ease;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.glass-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.03) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.glass-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.glass-card:hover::before {
+  opacity: 1;
+}
+
+/* Card title - modern minimal font */
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 200;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: lowercase;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.data-source {
+  font-size: 0.7rem;
+  color: rgba(78, 205, 196, 0.7);
+  font-weight: 400;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.subtitle-inline {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 200;
+  margin-left: 0.5rem;
+}
+
+/* Loading glow effect */
+.loading-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-glow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Placeholder styles for loading state */
+.image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.text-placeholder {
+  height: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.text-placeholder.short {
+  width: 60%;
+}
+
+/* Specific card styles - absolute positioning */
+.glass-card {
+  position: absolute;
+}
+
+.trends-card {
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 28%;
+  border-radius: 30px 50px 30px 50px;
+}
+
+.brands-card {
+  top: 0;
+  right: 0;
+  width: 22%;
+  height: 42%;
+  border-radius: 40px;
+}
+
+.context-card {
+  background: rgba(255, 107, 107, 0.02);
+  border-color: rgba(255, 107, 107, 0.08);
+  top: 0;
+  left: 41%;
+  width: 36%;
+  height: 17%;
+  border-radius: 60px 30px;
+}
+
+.recommendations-card {
+  bottom: 0;
+  left: 0;
+  width: 55%;
+  height: 45%;
+  border-radius: 35px;
+}
+
+.location-card {
+  background: rgba(78, 205, 196, 0.02);
+  border-color: rgba(78, 205, 196, 0.08);
+  top: 19%;
+  left: 0;
+  width: 40%;
+  height: 33%;
+  border-radius: 50px 20px;
+}
+
+.missing-card {
+  bottom: 0;
+  right: 0;
+  width: 43%;
+  height: 55%;
+  border-radius: 25px 45px 25px 45px;
+  z-index: 5; /* Higher z-index to be on top by default */
+}
+
+/* Content styles */
+.card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: calc(100% - 60px); /* Account for title */
+}
+
+.items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.trend-pill,
+.missing-pill {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.trend-pill:hover,
+.missing-pill:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.missing-pill.shimmer {
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.03) 0%, 
+    rgba(255, 255, 255, 0.08) 50%, 
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+
+/* Context info */
+.context-info {
+  text-align: center;
+}
+
+.season-text,
+.time-text {
+  font-size: 1.1rem;
+  font-weight: 200;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0.5rem 0;
+  letter-spacing: 0.1em;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+/* Recommendations card */
+.recommendations-grid {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  height: calc(100% - 60px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.recommendations-grid::-webkit-scrollbar {
+  height: 6px;
+}
+
+.recommendations-grid::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+}
+
+.recommendations-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.recommendations-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Common product item styles for both cards */
+.product-item {
+  position: relative;
+  flex: 0 0 calc(28% - 0.75rem);
+  width: calc(28% - 0.75rem);
+  height: 220px;
+  border-radius: 20px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.product-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* Both recommendation-item and gap-product-item use product-item class in HTML */
+
+/* Common product image styles */
+.product-image {
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  /* Subtle filter to blend white backgrounds with dark theme */
+  filter: brightness(0.7) contrast(1.1);
+}
+
+/* recommendation-image styles removed - using product-image directly */
+
+.recommendation-image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.recommendation-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+  padding: 1.5rem 1rem 1rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.recommendation-item:hover .recommendation-overlay,
+.product-item:hover .recommendation-overlay {
+  opacity: 1;
+}
+
+.overlay-brand {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(78, 205, 196, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.2rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.overlay-price {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.95);
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+/* Product popup */
+.product-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.product-popup {
+  background: rgba(20, 20, 20, 0.95);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  max-width: 800px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  position: relative;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.popup-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 10;
+}
+
+.popup-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
+}
+
+.popup-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+}
+
+.popup-image {
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.popup-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.popup-details {
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.popup-brand {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(78, 205, 196, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 0.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.popup-name {
+  font-size: 1.8rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 1rem;
+  line-height: 1.3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.popup-price {
+  font-size: 1.5rem;
+  font-weight: 200;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 0.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.popup-description {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 1.5rem;
+  font-weight: 300;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.popup-affinity {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 2rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.popup-visit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(78, 205, 196, 0.15);
+  border: 1px solid rgba(78, 205, 196, 0.3);
+  color: rgba(78, 205, 196, 0.9);
+  padding: 1rem 2rem;
+  border-radius: 50px;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  transition: all 0.3s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.popup-visit-btn:hover {
+  background: rgba(78, 205, 196, 0.25);
+  border-color: rgba(78, 205, 196, 0.5);
+  transform: translateX(4px);
+}
+
+/* Missing text */
+.missing-text {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 1rem;
+  font-weight: 200;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.missing-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* Wardrobe analysis text */
+.wardrobe-analysis-text {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 1rem;
+  font-weight: 200;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+/* Wardrobe gap products */
+.wardrobe-gap-products {
+  margin-top: 0.5rem;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.gap-products-scroll {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+  align-items: center;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.gap-products-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.gap-products-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+}
+
+.gap-products-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.gap-products-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* gap-product-item styles removed - using product-item directly */
+
+/* gap-product-image styles removed - using product-image directly */
+
+/* Gap product info styles removed - only showing images now */
+
+/* Location insight */
+.location-insight {
+  font-size: 0.95rem;
+  font-weight: 200;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+/* Style Twin Wardrobes specific styles */
+.twins-description {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 0.5rem;
+  opacity: 0.8;
+  font-weight: 200;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.twins-grid {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  height: calc(100% - 40px);
+  align-items: center;
+}
+
+.twins-grid::-webkit-scrollbar {
+  height: 6px;
+}
+
+.twins-grid::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+}
+
+.twins-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.twins-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Override product-item size for twins grid */
+.twins-grid .product-item {
+  flex: 0 0 140px;
+  width: 140px;
+  height: 140px;
+}
+
+/* Tribe Picks Card Styles */
+.tribe-picks-card {
+  position: absolute;
+  top: 20%;
+  left: 41%;
+  width: 36%;
+  height: 35%;
+  background: rgba(138, 43, 226, 0.02);
+  border-color: rgba(138, 43, 226, 0.08);
+  border-radius: 35px 20px;
+  z-index: 2; /* Allow overlap */
+}
+
+/* Brand pills styling */
+.brand-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.brand-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+.brand-pill:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.brand-pill-score {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: rgba(255, 107, 107, 0.8);
+  margin-left: 0.25rem;
+}
+
+.tribe-subtitle {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.8rem;
+  font-weight: 200;
+  letter-spacing: 0.05em;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+
+.no-data-message {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  font-style: italic;
+  font-weight: 200;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+
+/* Empty state */
+.empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+}
+
+.empty-message {
+  text-align: center;
+}
+
+.empty-message p {
+  font-size: 1.2rem;
+  font-weight: 200;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.1em;
+}
+
+.empty-message .highlight {
+  color: rgba(78, 205, 196, 0.8);
+  font-weight: 400;
+}
+
+/* Loading state */
+.loading-state {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+}
+
+.loading-pulse {
+  width: 60px;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% { 
+    transform: scale(1.2);
+    opacity: 0.1;
+  }
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  /* Cards stack vertically on smaller screens */
+  .glass-card {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    margin-bottom: 1rem;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+  }
+  
+  .moodboard-grid {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .moodboard-controls {
+    position: relative;
+    top: auto;
+    right: auto;
+    padding: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .moodboard-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  
+  .glass-card {
+    border-radius: 24px !important;
+  }
+  
+  .recommendations-grid {
+    flex-wrap: wrap;
+    height: auto;
+  }
+  
+  .recommendation-item {
+    width: 100%;
+    height: 200px;
+    max-width: none;
+  }
+  
+  .popup-content {
+    grid-template-columns: 1fr;
+  }
+  
+  .popup-image {
+    max-height: 200px;
+    padding: 1rem;
+  }
+  
+  .popup-details {
+    padding: 2rem;
+  }
+}

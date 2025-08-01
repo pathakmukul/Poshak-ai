@@ -30,8 +30,45 @@ echo "Killing any existing Flask processes..."
 pkill -f flask_api.py || true
 sleep 2
 
-cd backend && python flask_api.py 2>&1 | tee flask.log &
+cd backend && python -u flask_api.py 2>&1 | tee -a flask.log &
 FLASK_PID=$!
+
+# Clear Chrome's localStorage for localhost:3000
+echo ""
+echo "Clearing browser cache for localhost:3000..."
+
+# Create a Python script to clear Chrome's localStorage
+python3 << 'EOF'
+import os
+import sqlite3
+import shutil
+from pathlib import Path
+
+# Find Chrome's profile directory
+home = Path.home()
+chrome_paths = [
+    home / "Library/Application Support/Google/Chrome/Default/Local Storage",  # macOS
+    home / ".config/google-chrome/Default/Local Storage",  # Linux
+    home / "AppData/Local/Google/Chrome/User Data/Default/Local Storage"  # Windows
+]
+
+cleared = False
+for chrome_path in chrome_paths:
+    if chrome_path.exists():
+        # Look for localhost files
+        for file in chrome_path.glob("*localhost*"):
+            try:
+                print(f"Removing cache file: {file.name}")
+                file.unlink()
+                cleared = True
+            except Exception as e:
+                print(f"Could not remove {file.name}: {e}")
+
+if cleared:
+    print("✓ Browser cache cleared!")
+else:
+    print("⚠ No cache files found or unable to clear")
+EOF
 
 # Start React frontend
 echo ""

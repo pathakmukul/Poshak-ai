@@ -184,7 +184,7 @@ eas build -p android
 4. **Login issues**
    - Verify Firebase configuration
    - Check internet connection
-   - Ensure user exists in Firebase
+   - Ensure backend is running
 
 ## 🔮 Future Enhancements
 

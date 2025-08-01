@@ -1,13 +1,26 @@
+# Core Flask dependencies
 flask
 flask-cors
 python-dotenv
 requests
-google-generativeai
 gunicorn
-opencv-python
-numpy
-Pillow
-torch
-torchvision
-transformers
+
+# Firebase and Google Cloud
 firebase-admin
+google-generativeai
+google-cloud-aiplatform
+google-cloud-firestore
+
+# Image processing (lightweight)
+Pillow
+numpy
+
+# LangChain dependencies (API-based, no heavy models)
+langchain
+langchain-google-vertexai
+langchain-core
+pydantic
+vertexai
+
+# Functions Framework for Firebase Functions
+functions-framework

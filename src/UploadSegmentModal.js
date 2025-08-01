@@ -2,13 +2,14 @@ import React, { useState, useRef } from 'react';
 import './UploadSegmentModal.css';
 // All saves now go through Flask endpoints
 import API_URL from './config';
+import { clearUserClothingCache } from './closetService';
 
 function UploadSegmentModal({ user, onClose, onSuccess }) {
   const [currentStep, setCurrentStep] = useState('upload'); // upload, segment, edit
   const [uploadedImage, setUploadedImage] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [segmentResults, setSegmentResults] = useState(null);
-  const [activeTab, setActiveTab] = useState('all');
+  const [selectedItems, setSelectedItems] = useState({ shirt: true, pants: true, shoes: true }); // All selected by default
   const [editMode, setEditMode] = useState(false);
   const [editableMasks, setEditableMasks] = useState([]);
   const [selectedMaskIndices, setSelectedMaskIndices] = useState({ shirt: [], pants: [], shoes: [] });
@@ -108,12 +109,8 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
       console.log('Initializing edit mode with selections:', currentSelections);
       setSelectedMaskIndices(currentSelections);
       
-      // Set edit category based on active tab (but not 'all')
-      if (activeTab !== 'all') {
-        setEditCategory(activeTab);
-      } else {
-        setEditCategory('shirt'); // Default to shirt if viewing all
-      }
+      // Default to shirt category for editing
+      setEditCategory('shirt');
     }
   };
 
@@ -181,12 +178,29 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
   const saveToWardrobe = async () => {
     if (!segmentResults || !uploadedImage) return;
 
+    // Check if at least one item is selected
+    if (!selectedItems.shirt && !selectedItems.pants && !selectedItems.shoes) {
+      alert('Please select at least one item to save');
+      return;
+    }
+
     setProcessing(true);
     setStatus('Saving to wardrobe...');
 
     try {
       // Generate filename
       const fileName = `${Date.now()}_${uploadedImage.file.name}`;
+      
+      // Create filtered results based on selection
+      const filteredResults = {
+        ...segmentResults,
+        shirt_img: selectedItems.shirt ? segmentResults.shirt_img : null,
+        pants_img: selectedItems.pants ? segmentResults.pants_img : null,
+        shoes_img: selectedItems.shoes ? segmentResults.shoes_img : null,
+        shirt_count: selectedItems.shirt ? segmentResults.shirt_count : 0,
+        pants_count: selectedItems.pants ? segmentResults.pants_count : 0,
+        shoes_count: selectedItems.shoes ? segmentResults.shoes_count : 0,
+      };
       
       // Save to Firebase via Flask backend
       const saveResponse = await fetch('http://localhost:5001/firebase/save-results', {
@@ -197,7 +211,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
         body: JSON.stringify({
           user_id: user.uid,
           file_name: fileName,
-          segmentation_results: segmentResults,
+          segmentation_results: filteredResults,
           original_image: uploadedImage.localDataUrl // Use the data URL which includes base64
         }),
       });
@@ -212,6 +226,10 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
 
       // Check if save was successful
       if (saveResult.success) {
+        // Clear cache after successful save
+        clearUserClothingCache(user.uid);
+        console.log('Cache cleared after new item upload');
+        
         setStatus('Saved to wardrobe!');
         setTimeout(() => {
           onSuccess();
@@ -228,15 +246,16 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
   };
 
   return (
-    <div className="upload-segment-modal">
-      <div className="modal-header">
-        <h2>Add to Wardrobe</h2>
-        <button className="close-modal-button" onClick={onClose}>
-          ✕
-        </button>
-      </div>
+    <div className="upload-segment-modal" onClick={onClose}>
+      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Add to Wardrobe</h2>
+          <button className="close-modal-button" onClick={onClose}>
+            ✕
+          </button>
+        </div>
 
-      <div className="modal-body">
+        <div className="modal-body">
         {currentStep === 'upload' && (
           <div className="upload-step">
             <h3>Upload Your Image</h3>
@@ -275,14 +294,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
                   onClick={processSegmentation}
                   disabled={processing}
                 >
-                  {processing ? (
-                    <>
-                      <span className="spinner"></span>
-                      Processing...
-                    </>
-                  ) : (
-                    '🎯 Segment Clothing'
-                  )}
+                  {processing ? 'Processing...' : '🎯 Segment Clothing'}
                 </button>
                 {status && <p className="status-message">{status}</p>}
                 
@@ -300,7 +312,16 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
               </div>
             ) : (
               <div className="results-section">
-                <h3>Detected Clothing Items</h3>
+                <div className="results-header">
+                  <h3>Detected Clothing Items</h3>
+                  <button 
+                    className="save-button"
+                    onClick={saveToWardrobe}
+                    disabled={processing || !segmentResults}
+                  >
+                    {processing ? 'Saving...' : `💾 Save Selected (${Object.values(selectedItems).filter(v => v).length})`}
+                  </button>
+                </div>
                 
                 {/* Show MediaPipe person extraction visualization */}
                 {personExtractionViz && (
@@ -314,84 +335,65 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
                   </div>
                 )}
                 
-                {/* Tabs for categories */}
-                <div className="category-tabs">
-                  <button 
-                    className={`tab ${activeTab === 'all' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('all')}
-                  >
-                    All Items
-                  </button>
-                  <button 
-                    className={`tab ${activeTab === 'shirt' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('shirt')}
-                  >
-                    Shirts ({segmentResults.shirt_count || 0})
-                  </button>
-                  <button 
-                    className={`tab ${activeTab === 'pants' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('pants')}
-                  >
-                    Pants ({segmentResults.pants_count || 0})
-                  </button>
-                  <button 
-                    className={`tab ${activeTab === 'shoes' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('shoes')}
-                  >
-                    Shoes ({segmentResults.shoes_count || 0})
-                  </button>
-                  <button 
-                    className={`tab ${activeTab === 'person' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('person')}
-                    style={activeTab === 'person' ? { backgroundColor: '#9c27b0' } : {}}
-                  >
-                    Person Only (No BG)
-                  </button>
-                </div>
-
-                {/* Display segmented images */}
-                <div className="segmented-images">
-                  {activeTab === 'all' && segmentResults.all_items_img && (
-                    <img src={`data:image/png;base64,${segmentResults.all_items_img}`} alt="All items" />
-                  )}
-                  {activeTab === 'shirt' && segmentResults.shirt_img && (
-                    <img src={`data:image/png;base64,${segmentResults.shirt_img}`} alt="Shirts" />
-                  )}
-                  {activeTab === 'pants' && segmentResults.pants_img && (
-                    <img src={`data:image/png;base64,${segmentResults.pants_img}`} alt="Pants" />
-                  )}
-                  {activeTab === 'shoes' && segmentResults.shoes_img && (
-                    <img src={`data:image/png;base64,${segmentResults.shoes_img}`} alt="Shoes" />
-                  )}
-                  {activeTab === 'person' && segmentResults.person_only_img && (
-                    <div>
-                      <img 
-                        src={`data:image/png;base64,${segmentResults.person_only_img}`} 
-                        alt="Person only" 
-                        style={{ backgroundColor: '#f0f0f0', borderRadius: '8px' }}
-                      />
-                      <p style={{ textAlign: 'center', marginTop: '10px', color: '#666' }}>
-                        This is what will be saved to your wardrobe
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action buttons */}
-                <div className="action-buttons">
-                  <button 
-                    className="edit-button"
-                    onClick={handleEditMasks}
-                  >
-                    ✏️ Edit Selections
-                  </button>
-                  <button 
-                    className="save-button"
-                    onClick={saveToWardrobe}
-                    disabled={processing}
-                  >
-                    {processing ? 'Saving...' : '💾 Save to Wardrobe'}
-                  </button>
+                {/* Item Selection */}
+                <div className="item-selection">
+                  <div className="selection-header">
+                    <h4>Select items to save:</h4>
+                    <button className="edit-masks-link" onClick={handleEditMasks}>
+                      Edit masks
+                    </button>
+                  </div>
+                  <div className="selection-grid">
+                    {segmentResults.shirt_img && (
+                      <div 
+                        className={`selection-item ${selectedItems.shirt ? 'selected' : ''}`}
+                        onClick={() => setSelectedItems(prev => ({ ...prev, shirt: !prev.shirt }))}
+                      >
+                        <div className="selection-checkbox">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedItems.shirt || false}
+                            onChange={() => {}}
+                          />
+                        </div>
+                        <img src={`data:image/png;base64,${segmentResults.shirt_img}`} alt="Shirts" />
+                        <p>Shirts ({segmentResults.shirt_count || 0})</p>
+                      </div>
+                    )}
+                    {segmentResults.pants_img && (
+                      <div 
+                        className={`selection-item ${selectedItems.pants ? 'selected' : ''}`}
+                        onClick={() => setSelectedItems(prev => ({ ...prev, pants: !prev.pants }))}
+                      >
+                        <div className="selection-checkbox">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedItems.pants || false}
+                            onChange={() => {}}
+                          />
+                        </div>
+                        <img src={`data:image/png;base64,${segmentResults.pants_img}`} alt="Pants" />
+                        <p>Pants ({segmentResults.pants_count || 0})</p>
+                      </div>
+                    )}
+                    {segmentResults.shoes_img && (
+                      <div 
+                        className={`selection-item ${selectedItems.shoes ? 'selected' : ''}`}
+                        onClick={() => setSelectedItems(prev => ({ ...prev, shoes: !prev.shoes }))}
+                      >
+                        <div className="selection-checkbox">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedItems.shoes || false}
+                            onChange={() => {}}
+                          />
+                        </div>
+                        <img src={`data:image/png;base64,${segmentResults.shoes_img}`} alt="Shoes" />
+                        <p>Shoes ({segmentResults.shoes_count || 0})</p>
+                      </div>
+                    )}
+                    
+                  </div>
                 </div>
 
                 {status && <p className="status-message">{status}</p>}
@@ -496,6 +498,7 @@ function UploadSegmentModal({ user, onClose, onSuccess }) {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

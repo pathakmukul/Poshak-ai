@@ -9,9 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  SafeAreaView,
+  Platform,
   FlatList,
 } from 'react-native';
+import ScreenHeader from '../components/ScreenHeader';
 import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
 import { getUserImages, uploadUserImage, deleteUserImage, getMaskData, getSharedGarments } from '../services/storageService';
@@ -313,7 +314,12 @@ function Wardrobe({ navigation, route, user }) {
   const dataWithUploadCard = [{ isUploadCard: true }, ...wardrobeItems];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <ScreenHeader 
+        title="My Wardrobe"
+        onBack={() => navigation.goBack()}
+      />
+      
       <FlatList
         data={dataWithUploadCard}
         renderItem={renderItem}
@@ -610,14 +616,14 @@ function Wardrobe({ navigation, route, user }) {
         </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000000',
   },
   centerContainer: {
     flex: 1,

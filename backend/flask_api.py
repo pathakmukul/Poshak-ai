@@ -1,6 +1,5 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
-import cv2
 import os
 import sys
 import numpy as np
@@ -8,15 +7,14 @@ import base64
 from io import BytesIO
 import io
 from PIL import Image
-import torch
 from dotenv import load_dotenv
 import requests
 import json
 import pickle
 from datetime import datetime
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file in parent directory
+load_dotenv('../.env')
 
 # Import Google GenerativeAI
 try:
@@ -26,11 +24,8 @@ except ImportError:
     GEMINI_AVAILABLE = False
     print("Google GenerativeAI package not installed. Run: pip install google-generativeai")
 
-# Optimize for Apple Silicon
-torch.set_num_threads(4)  # Use 4 CPU threads (better balance)
-if torch.backends.mps.is_available():
-    print(f"MPS (Metal Performance Shaders) is available!")
-    print(f"Using Apple Silicon GPU acceleration")
+# Using API mode - no local model optimization needed
+print(f"Running in API mode - using external APIs for ML processing")
 
 import time
 
@@ -40,8 +35,24 @@ from config_improved import DEBUG_CONFIG
 # Import Gemini service
 from services.gemini_service import GeminiService
 
+# Import Style Assistant service
+from services.assistantllm import StyleAssistantService
+
+# Import OpenAI TryOn service
+from services.openai_tryon_service import OpenAITryOnService
+
+# Import LangChain Agent service
+from services.langchain_agent_fixed import (
+    handle_agent_chat, 
+    clear_agent_session,
+    get_or_create_agent
+)
+
 # Import Firebase service for centralized Firebase operations
 from services.firebase_service import FirebaseService, bucket
+from google.cloud import firestore
+from services.fashion_trends_service import FashionTrendsService
+from services.moodboard import TrendsService
 
 # Import visualization and image processing services
 from services.visualization_service import (
@@ -69,8 +80,16 @@ if USE_HF_API:
     print(f"   HF Token configured: {'Yes' if os.getenv('HUGGINGFACE_API_TOKEN') else 'No'}")
 print("=" * 60)
 
+# Delay imports until after checking USE_HF_API to avoid loading heavy dependencies
+process_with_segformer = None
+filter_best_clothing_items = None
+MODEL_INFO = None
+init_segmentation = None
+cleanup_model = None
+
 if USE_HF_API:
     print("📡 Using Hugging Face API for Segformer")
+    # Import inside if block to prevent loading segformer_service.py
     from services.segformer_api_service import (
         process_with_segformer, 
         filter_best_clothing_items, 
@@ -80,13 +99,16 @@ if USE_HF_API:
     )
 else:
     print("💻 Using local Segformer model")
-    from services.segformer_service import (
-        process_with_segformer, 
-        filter_best_clothing_items, 
-        MODEL_INFO,
-        init_segmentation,
-        cleanup_model
-    )
+    # This import won't happen in API mode, preventing transformers/torch loading
+    # Commented out for Firebase deployment - uncomment if using local model
+    # from services.segformer_service import (
+    #     process_with_segformer, 
+    #     filter_best_clothing_items, 
+    #     MODEL_INFO,
+    #     init_segmentation,
+    #     cleanup_model
+    # )
+    raise NotImplementedError("Local model mode is disabled for Firebase deployment. Use USE_HF_API=true")
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -198,15 +220,15 @@ def process_image():
                 
                 # Decode base64
                 img_bytes = base64.b64decode(image_data)
-                nparr = np.frombuffer(img_bytes, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                image_pil = Image.open(BytesIO(img_bytes))
                 
-                if image is None:
-                    return jsonify({'error': 'Failed to decode base64 image'}), 500
+                # Convert to RGB if needed
+                if image_pil.mode != 'RGB':
+                    image_pil = image_pil.convert('RGB')
                     
                 # Save temporarily for processing
                 temp_path = os.path.join(base_dir, 'temp_upload_image.jpg')
-                cv2.imwrite(temp_path, image)
+                image_pil.save(temp_path, 'JPEG')
                 full_image_path = temp_path
                     
             except Exception as e:
@@ -218,16 +240,16 @@ def process_image():
                 response = requests.get(image_url)
                 response.raise_for_status()
                 
-                # Convert to numpy array
-                nparr = np.frombuffer(response.content, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                # Open image from URL response
+                image_pil = Image.open(BytesIO(response.content))
                 
-                if image is None:
-                    return jsonify({'error': 'Failed to decode image from URL'}), 500
+                # Convert to RGB if needed
+                if image_pil.mode != 'RGB':
+                    image_pil = image_pil.convert('RGB')
                     
                 # Save temporarily
                 temp_path = os.path.join(base_dir, 'temp_firebase_image.jpg')
-                cv2.imwrite(temp_path, image)
+                image_pil.save(temp_path, 'JPEG')
                 full_image_path = temp_path
                     
             except Exception as e:
@@ -240,26 +262,30 @@ def process_image():
             if not os.path.exists(full_image_path):
                 return jsonify({'error': f'Image not found: {full_image_path}'}), 404
                 
-            image = cv2.imread(full_image_path)
-            if image is None:
-                return jsonify({'error': f'Failed to read image: {full_image_path}'}), 500
+            image_pil = Image.open(full_image_path)
+            
+            # Convert to RGB if needed
+            if image_pil.mode != 'RGB':
+                image_pil = image_pil.convert('RGB')
                 
+        # Get original dimensions
+        original_w, original_h = image_pil.size
+        
         # Resize image if too large (for efficiency)
         MAX_PROCESS_SIZE = 1024  # Maximum dimension for processing
-        h, w = image.shape[:2]
-        if max(h, w) > MAX_PROCESS_SIZE:
+        if max(original_h, original_w) > MAX_PROCESS_SIZE:
             # Calculate resize ratio
-            ratio = MAX_PROCESS_SIZE / max(h, w)
-            new_w = int(w * ratio)
-            new_h = int(h * ratio)
-            print(f"Resizing image from {w}x{h} to {new_w}x{new_h} for efficient processing")
-            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            ratio = MAX_PROCESS_SIZE / max(original_h, original_w)
+            new_w = int(original_w * ratio)
+            new_h = int(original_h * ratio)
+            print(f"Resizing image from {original_w}x{original_h} to {new_w}x{new_h} for efficient processing")
+            image_pil = image_pil.resize((new_w, new_h), Image.Resampling.LANCZOS)
             
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Convert to numpy array for processing (already in RGB)
+        image_rgb = np.array(image_pil)
         
-        # Store original dimensions for response
-        original_h, original_w = h, w
-        processed_h, processed_w = image.shape[:2]
+        # Store dimensions for response
+        processed_h, processed_w = image_rgb.shape[:2]
         
         # Process with Segformer
         print("\n=== Processing with Segformer B2 Clothes Model ===")
@@ -581,13 +607,14 @@ def login():
         if not username:
             return jsonify({'error': 'Username is required'}), 400
         
-        # Dummy users list with consistent UIDs
+        # Map dummy users to actual Firebase UIDs from console
+        # Using the first UID for each email from Firebase Console
         dummy_users = {
-            'John Doe': 'john_doe_uid_12345',
-            'Jane Smith': 'jane_smith_uid_67890',
-            'Test User': 'test_user_uid_11111',
-            'Fashion Designer': 'fashion_designer_uid_22222',
-            'Demo Account': 'demo_account_uid_33333'
+            'John Doe': 'ZtLk8Ct3XvXNeQepqnSME8g',  # john.doe@poshakai.test
+            'Jane Smith': 'xZqtHBbe0hVLsoEaWOU58W',  # jane.smith@poshakai.test
+            'Test User': '0PmexvZDQrPus4LvZoADDxL',  # test.user@poshakai.test
+            'Fashion Designer': 'ATTDFkAwTdfYBl4V36vhRjhrqEd2',  # fashion.designer@poshakai.test (first UID)
+            'Demo Account': 'omXo3iWdEeTCbCusQVIvIAeSaGG2'  # demo.account@poshakai.test
         }
         
         if username not in dummy_users:
@@ -614,6 +641,7 @@ def login():
 @app.route('/firebase/save-results', methods=['POST'])
 def save_firebase_results():
     """Save processed results to Firebase - used by mobile and web"""
+    print("\n=== SAVE-RESULTS ENDPOINT CALLED ===")
     try:
         data = request.json
         user_id = data.get('user_id')
@@ -621,8 +649,61 @@ def save_firebase_results():
         segmentation_results = data.get('segmentation_results')
         original_image = data.get('original_image')  # base64
         
+        print(f"User ID: {user_id}")
+        print(f"File name: {file_name}")
+        print(f"Has segmentation results: {bool(segmentation_results)}")
+        print(f"Has original image: {bool(original_image)}")
+        
+        if segmentation_results:
+            print(f"Detected items counts:")
+            print(f"  Shirts: {segmentation_results.get('shirt_count', 0)}")
+            print(f"  Pants: {segmentation_results.get('pants_count', 0)}")
+            print(f"  Shoes: {segmentation_results.get('shoes_count', 0)}")
+        
         if not user_id or not segmentation_results:
             return jsonify({'error': 'Missing required data'}), 400
+        
+        # Generate descriptions for detected clothing items
+        try:
+            # Get the original image (either from segmentation results or passed directly)
+            image_for_description = original_image or segmentation_results.get('original_image')
+            
+            if image_for_description:
+                # Build detected items dict from segmentation results
+                detected_items = {}
+                if segmentation_results.get('shirt_count', 0) > 0:
+                    detected_items['shirt'] = ""
+                if segmentation_results.get('pants_count', 0) > 0:
+                    detected_items['pants'] = ""
+                if segmentation_results.get('shoes_count', 0) > 0:
+                    detected_items['shoes'] = ""
+                
+                if detected_items:
+                    print(f"\n=== DESCRIPTION GENERATION DEBUG ===")
+                    print(f"Detected items for description: {list(detected_items.keys())}")
+                    print(f"Image data available: {bool(image_for_description)}")
+                    print(f"Image data length: {len(image_for_description) if image_for_description else 0}")
+                    
+                    # Call Gemini to generate descriptions
+                    descriptions, desc_status = gemini_service.generate_clothing_descriptions(
+                        image_for_description,
+                        detected_items
+                    )
+                    
+                    print(f"Gemini response status: {desc_status}")
+                    print(f"Descriptions returned: {descriptions}")
+                    
+                    if desc_status == 200:
+                        # Add descriptions to segmentation results
+                        segmentation_results['descriptions'] = descriptions
+                        print(f"✅ Successfully added descriptions to segmentation_results")
+                    else:
+                        print(f"❌ Failed to generate descriptions: {descriptions}")
+                        # Continue without descriptions if generation fails
+                    print(f"=== END DESCRIPTION DEBUG ===\n")
+        except Exception as desc_error:
+            print(f"Error generating descriptions: {str(desc_error)}")
+            # Continue without descriptions
         
         # Save to Firebase
         result = FirebaseService.save_processed_results(
@@ -836,7 +917,6 @@ def get_user_clothing_items(user_id):
         # Process each image
         for image in images_result['images']:
             image_name = image['name'].split('.')[0]
-            print(f"\nProcessing image: {image_name}", flush=True)
             
             # Get mask data
             mask_result = FirebaseService.get_mask_data(user_id, image_name)
@@ -848,21 +928,14 @@ def get_user_clothing_items(user_id):
             visualizations = mask_data.get('visualizations', {})
             classifications = mask_data.get('classifications', {})
             metadata = mask_data.get('metadata', {})
+            descriptions = mask_data.get('descriptions', {})
             
             # Process shirts
             if classifications.get('shirt', 0) > 0:
                 shirt_image = closet_visualizations.get('shirt') or visualizations.get('shirt')
                 if shirt_image:
-                    print(f"\n  Processing shirt image for {image_name}")
-                    print(f"  Raw image data (first 100 chars): {shirt_image[:100]}")
-                    print(f"  Using closet viz: {bool(closet_visualizations.get('shirt'))}")
-                    print(f"  Content bounds: {metadata.get('shirt')}")
-                    
                     # Fix any encoding issues
                     shirt_image = fix_data_url_encoding(shirt_image)
-                    
-                    print(f"  Processed image data (first 100 chars): {shirt_image[:100]}")
-                    print(f"  Final image length: {len(shirt_image)} chars")
                     
                     all_shirts.append({
                         'id': f"{image_name}_shirt",
@@ -870,20 +943,16 @@ def get_user_clothing_items(user_id):
                         'type': 'shirt',
                         'source_image': image_name,
                         'isClosetViz': bool(closet_visualizations.get('shirt')),
-                        'contentBounds': metadata.get('shirt')
+                        'contentBounds': metadata.get('shirt'),
+                        'description': descriptions.get('shirt', '')
                     })
             
             # Process pants
             if classifications.get('pants', 0) > 0:
                 pants_image = closet_visualizations.get('pants') or visualizations.get('pants')
                 if pants_image:
-                    print(f"\n  Processing pants image for {image_name}")
-                    print(f"  Raw image data (first 100 chars): {pants_image[:100]}")
-                    
                     # Fix any encoding issues
                     pants_image = fix_data_url_encoding(pants_image)
-                    
-                    print(f"  Processed image data (first 100 chars): {pants_image[:100]}")
                     
                     all_pants.append({
                         'id': f"{image_name}_pants",
@@ -891,20 +960,16 @@ def get_user_clothing_items(user_id):
                         'type': 'pants',
                         'source_image': image_name,
                         'isClosetViz': bool(closet_visualizations.get('pants')),
-                        'contentBounds': metadata.get('pants')
+                        'contentBounds': metadata.get('pants'),
+                        'description': descriptions.get('pants', '')
                     })
             
             # Process shoes
             if classifications.get('shoes', 0) > 0:
                 shoes_image = closet_visualizations.get('shoes') or visualizations.get('shoes')
                 if shoes_image:
-                    print(f"\n  Processing shoes image for {image_name}")
-                    print(f"  Raw image data (first 100 chars): {shoes_image[:100]}")
-                    
                     # Fix any encoding issues
                     shoes_image = fix_data_url_encoding(shoes_image)
-                    
-                    print(f"  Processed image data (first 100 chars): {shoes_image[:100]}")
                     
                     all_shoes.append({
                         'id': f"{image_name}_shoes",
@@ -912,7 +977,8 @@ def get_user_clothing_items(user_id):
                         'type': 'shoes',
                         'source_image': image_name,
                         'isClosetViz': bool(closet_visualizations.get('shoes')),
-                        'contentBounds': metadata.get('shoes')
+                        'contentBounds': metadata.get('shoes'),
+                        'description': descriptions.get('shoes', '')
                     })
         
         print(f"\n=== DEBUG: Returning {len(all_shirts)} shirts, {len(all_pants)} pants, {len(all_shoes)} shoes ===", flush=True)
@@ -934,6 +1000,98 @@ def get_user_clothing_items(user_id):
             'pants': [],
             'shoes': []
         })
+
+@app.route('/firebase/clothing-items-stream/<user_id>', methods=['GET'])
+def get_user_clothing_items_stream(user_id):
+    """Stream clothing items as they're processed for progressive loading"""
+    try:
+        def generate():
+            # Get all user images
+            images_result = FirebaseService.get_user_images(user_id)
+            if not images_result['success']:
+                yield json.dumps({'type': 'error', 'message': 'Failed to load images'}) + '\n'
+                return
+            
+            # Process each image and yield items as they're ready
+            for image in images_result['images']:
+                image_name = image['name'].split('.')[0]
+                
+                # Get mask data
+                mask_result = FirebaseService.get_mask_data(user_id, image_name)
+                if not mask_result['success'] or not mask_result['data']:
+                    continue
+                    
+                mask_data = mask_result['data']
+                closet_visualizations = mask_data.get('closet_visualizations', {})
+                visualizations = mask_data.get('visualizations', {})
+                classifications = mask_data.get('classifications', {})
+                metadata = mask_data.get('metadata', {})
+                descriptions = mask_data.get('descriptions', {})
+                
+                # Process and yield shirts
+                if classifications.get('shirt', 0) > 0:
+                    shirt_image = closet_visualizations.get('shirt') or visualizations.get('shirt')
+                    if shirt_image:
+                        shirt_image = fix_data_url_encoding(shirt_image)
+                        yield json.dumps({
+                            'type': 'item',
+                            'category': 'shirt',
+                            'data': {
+                                'id': f"{image_name}_shirt",
+                                'image': shirt_image,
+                                'type': 'shirt',
+                                'source_image': image_name,
+                                'isClosetViz': bool(closet_visualizations.get('shirt')),
+                                'contentBounds': metadata.get('shirt'),
+                                'description': descriptions.get('shirt', '')
+                            }
+                        }) + '\n'
+                
+                # Process and yield pants
+                if classifications.get('pants', 0) > 0:
+                    pants_image = closet_visualizations.get('pants') or visualizations.get('pants')
+                    if pants_image:
+                        pants_image = fix_data_url_encoding(pants_image)
+                        yield json.dumps({
+                            'type': 'item',
+                            'category': 'pants',
+                            'data': {
+                                'id': f"{image_name}_pants",
+                                'image': pants_image,
+                                'type': 'pants',
+                                'source_image': image_name,
+                                'isClosetViz': bool(closet_visualizations.get('pants')),
+                                'contentBounds': metadata.get('pants'),
+                                'description': descriptions.get('pants', '')
+                            }
+                        }) + '\n'
+                
+                # Process and yield shoes
+                if classifications.get('shoes', 0) > 0:
+                    shoes_image = closet_visualizations.get('shoes') or visualizations.get('shoes')
+                    if shoes_image:
+                        shoes_image = fix_data_url_encoding(shoes_image)
+                        yield json.dumps({
+                            'type': 'item',
+                            'category': 'shoes',
+                            'data': {
+                                'id': f"{image_name}_shoes",
+                                'image': shoes_image,
+                                'type': 'shoes',
+                                'source_image': image_name,
+                                'isClosetViz': bool(closet_visualizations.get('shoes')),
+                                'contentBounds': metadata.get('shoes'),
+                                'description': descriptions.get('shoes', '')
+                            }
+                        }) + '\n'
+            
+            # Send completion signal
+            yield json.dumps({'type': 'complete'}) + '\n'
+        
+        return Response(generate(), mimetype='text/event-stream')
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Virtual Closet endpoints
 @app.route('/firebase/virtual-closet', methods=['POST'])
@@ -1022,6 +1180,85 @@ def delete_virtual_closet_item(user_id, item_id):
         print(f"Error deleting virtual closet item: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# Style Assistant routes
+@app.route('/style-assistant/chat', methods=['POST'])
+def style_assistant_chat():
+    """Handle style assistant chat requests"""
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        query = data.get('query')
+        clothing_items = data.get('clothing_items', {})
+        conversation_history = data.get('conversation_history', [])
+        
+        print(f"\n=== STYLE ASSISTANT REQUEST ===")
+        print(f"User ID: {user_id}")
+        print(f"Query: {query}")
+        print(f"Conversation history length: {len(conversation_history)}")
+        print(f"Clothing items counts:")
+        print(f"  Shirts: {len(clothing_items.get('shirts', []))}")
+        print(f"  Pants: {len(clothing_items.get('pants', []))}")
+        print(f"  Shoes: {len(clothing_items.get('shoes', []))}")
+        
+        if not user_id or not query:
+            return jsonify({
+                'success': False,
+                'error': 'Missing user_id or query'
+            }), 400
+        
+        # Initialize style assistant
+        style_assistant = StyleAssistantService()
+        
+        # Get recommendation with conversation history
+        result = style_assistant.get_outfit_recommendation(query, clothing_items, conversation_history)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error in style assistant chat: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'recommendation': "I'm having trouble processing your request. Please try again.",
+            'matched_items': []
+        }), 500
+
+# LangChain Agent routes
+@app.route('/agent/chat', methods=['POST'])
+def agent_chat():
+    """Chat endpoint for LangChain style agent"""
+    try:
+        data = request.json
+        result = handle_agent_chat(data)
+        
+        if result.get('success'):
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        print(f"Error in agent chat: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/agent/clear-session/<session_id>', methods=['POST'])
+def agent_clear_session(session_id):
+    """Clear chat history for a specific session"""
+    try:
+        result = clear_agent_session(session_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 # Gemini routes
 @app.route('/get-gemini-data', methods=['POST'])
 def get_gemini_data():
@@ -1093,6 +1330,29 @@ def gemini_tryon():
     
     return jsonify(response), status_code
 
+@app.route('/generate-clothing-descriptions', methods=['POST'])
+def generate_clothing_descriptions():
+    """Generate descriptions for detected clothing items using Gemini"""
+    try:
+        data = request.json
+        image_base64 = data.get('image')
+        detected_items = data.get('detected_items')
+        
+        if not image_base64 or not detected_items:
+            return jsonify({'error': 'Missing image or detected_items'}), 400
+        
+        # Call Gemini service
+        descriptions, status_code = gemini_service.generate_clothing_descriptions(
+            image_base64,
+            detected_items
+        )
+        
+        return jsonify(descriptions), status_code
+        
+    except Exception as e:
+        print(f"Error generating descriptions: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/gemini-tryon-multiple', methods=['POST'])
 def gemini_tryon_multiple():
     """Test endpoint for multi-item virtual try-on using Gemini"""
@@ -1132,11 +1392,456 @@ def gemini_tryon_multiple():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/openai-tryon', methods=['POST'])
+def openai_tryon():
+    """Virtual try-on using OpenAI's image API"""
+    try:
+        data = request.json
+        
+        # Debug incoming request
+        print(f"\n=== /openai-tryon called ===")
+        print(f"Request from: {request.remote_addr}")
+        print(f"Has person_image: {bool(data.get('person_image'))}")
+        print(f"Garment files provided: {list(data.get('garment_files', {}).keys())}")
+        
+        # Validate required fields
+        if not data.get('person_image') or not data.get('garment_files'):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Initialize OpenAI service
+        openai_service = OpenAITryOnService()
+        
+        # Process try-on
+        result = openai_service.process_tryon(
+            person_image_base64=data['person_image'],
+            garment_images=data['garment_files']
+        )
+        
+        if result['success']:
+            print(f"OpenAI TryOn successful")
+            return jsonify(result), 200
+        else:
+            print(f"OpenAI TryOn failed: {result.get('error', 'Unknown error')}")
+            return jsonify(result), 500
+            
+    except Exception as e:
+        print(f"[openai-tryon] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 def cleanup():
     """Clean up models from memory on shutdown"""
     print("\nCleaning up Segformer model from memory...")
     cleanup_model()
     print("Memory cleanup complete!")
+
+# Fashion Trends and Recommendations Routes
+@app.route('/fashion-trends/<location>', methods=['GET'])
+def get_fashion_trends(location):
+    """Get fashion trends for a specific location"""
+    print(f"\n[fashion-trends] Getting trends for location: {location}")
+    
+    try:
+        context = request.args.get('context', 'home')
+        
+        # Use the new TrendsService from moodboard
+        trends_service = TrendsService()
+        trends_data = trends_service.get_trending_items(location, context)
+        
+        # Get time context from old service
+        old_service = FashionTrendsService()
+        time_context = old_service.get_current_time_context()
+        
+        # Combine the results
+        result = {
+            **trends_data,
+            'time_context': time_context,
+            'season': time_context['season']
+        }
+        
+        if result.get('success'):
+            # Cache in Firebase - disabled due to Firestore mode issue
+            # firebase_service = FirebaseService()
+            # cache_key = f"trends_{location}_{context}_{datetime.now().strftime('%Y%m%d')}"
+            # firebase_service.save_trends_cache(cache_key, result)
+            pass
+            
+        return jsonify(result)
+    except Exception as e:
+        print(f"[fashion-trends] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/shopping-recommendations', methods=['POST'])
+def get_shopping_recommendations():
+    """Get shopping recommendations based on location and needs"""
+    print("\n[shopping-recommendations] Processing request")
+    print(f"[shopping-recommendations] SERPER_API_KEY exists: {bool(os.getenv('SERPER_API_KEY'))}")
+    print(f"[shopping-recommendations] SERPER_API_KEY length: {len(os.getenv('SERPER_API_KEY', ''))}")
+    
+    try:
+        data = request.json
+        location = data.get('location', 'New York')
+        shopping_need = data.get('shopping_need', 'casual wear')
+        budget = data.get('budget', 'medium')
+        user_id = data.get('user_id')
+        
+        # Get user's wardrobe data if user_id provided
+        wardrobe_data = None
+        if user_id:
+            firebase_service = FirebaseService()
+            wardrobe_result = firebase_service.get_all_user_clothing_data(user_id)
+            if wardrobe_result.get('success'):
+                wardrobe_data = wardrobe_result
+        
+        trends_service = FashionTrendsService()
+        result = trends_service.get_shopping_recommendations(
+            location, shopping_need, budget, wardrobe_data
+        )
+        
+        if result.get('success'):
+            # Cache in Firebase - disabled due to Firestore mode issue
+            # firebase_service = FirebaseService()
+            # cache_key = f"recs_{location}_{shopping_need}_{datetime.now().strftime('%Y%m%d')}"
+            # firebase_service.save_recommendations_cache(user_id, cache_key, result)
+            pass
+            
+        return jsonify(result)
+    except Exception as e:
+        print(f"[shopping-recommendations] Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/tribe-picks', methods=['POST'])
+def get_tribe_picks():
+    """Get fashion brand recommendations based on cultural preferences using Qloo API"""
+    try:
+        data = request.json
+        music = data.get('music', 'Rock')
+        movies = data.get('movies', 'Die Hard')
+        location = data.get('location', 'New York')
+        
+        print(f"[Flask] Getting tribe picks for music: {music}, movies: {movies}, location: {location}")
+        
+        # Check if we have Qloo API key
+        qloo_api_key = os.getenv('QLOO_API_KEY', '')
+        if not qloo_api_key:
+            print("[Flask] No QLOO API key configured")
+            return jsonify({
+                'success': False,
+                'error': 'QLOO API key not configured',
+                'brands': []
+            }), 500
+        
+        # Use Qloo insights API with proper parameters
+        headers = {'X-Api-Key': qloo_api_key}
+        qloo_url = 'https://hackathon.api.qloo.com/v2/insights'
+        
+        # Build query parameters for RETAIL brands with cultural signals
+        params = {
+            'filter.type': 'urn:entity:brand',
+            'filter.tags': 'urn:tag:genre:brand:retail',  # Retail stores where tribe shops
+            'signal.location.query': location,
+            'limit': 10,
+            'sort': 'affinity'
+        }
+        
+        # Add only one preference as interest tag (Qloo hackathon API limitation)
+        # Testing shows the API returns same brands regardless of interests
+        if music and music.lower() != 'not set':
+            params['signal.interests.tags'] = music.lower()
+        elif movies and movies.lower() != 'not set':
+            params['signal.interests.tags'] = movies.lower()
+        
+        print(f"[Flask] Calling Qloo insights API")
+        print(f"[Flask] Music: {music}, Movies: {movies}")
+        print(f"[Flask] Query params: {params}")
+        
+        response = requests.get(qloo_url, headers=headers, params=params, timeout=10)
+        print(f"[Flask] Qloo response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"[Flask] Raw Qloo response: {json.dumps(data, indent=2)[:500]}...")  # First 500 chars
+            
+            # Check different possible response structures
+            brands_data = []
+            if 'results' in data and 'entities' in data['results']:
+                brands_data = data['results']['entities']
+            elif 'entities' in data:
+                brands_data = data['entities']
+            elif 'data' in data:
+                brands_data = data['data']
+            
+            print(f"[Flask] Got {len(brands_data)} brands from Qloo")
+            
+            # Process brands with scores
+            brands = []
+            for i, brand in enumerate(brands_data[:10]):  # Try to get more brands
+                brand_name = brand.get('name', '')
+                # Use popularity or affinity score, scale to percentage
+                popularity = brand.get('popularity', 0.8)
+                score = round(popularity * 100, 1)
+                
+                print(f"[Flask] Brand {i+1}: {brand_name} (score: {score})")
+                
+                if brand_name:  # Only add if we have a name
+                    brands.append({
+                        'name': brand_name,
+                        'score': score
+                    })
+                
+                if len(brands) >= 4:  # Stop after 4 brands
+                    break
+            
+            # Only return brands we actually got from Qloo
+            
+            return jsonify({
+                'success': True,
+                'description': f"{music} + {movies} fans shop at:",
+                'brands': brands,
+                'source': 'qloo'
+            })
+            
+        else:
+            print(f"[Flask] Qloo API returned {response.status_code}")
+            try:
+                error_data = response.json()
+                print(f"[Flask] Qloo error response: {error_data}")
+            except:
+                print(f"[Flask] Qloo error text: {response.text}")
+            
+            return jsonify({
+                'success': False,
+                'error': f'QLOO API returned {response.status_code}',
+                'brands': []
+            }), 500
+            
+    except Exception as e:
+        print(f"[Flask] Error in tribe picks: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'brands': []
+        }), 500
+
+@app.route('/search-products', methods=['POST'])
+def search_products():
+    """Simple product search using Serper API"""
+    print("\n[search-products] Processing request")
+    
+    try:
+        data = request.json
+        query = data.get('query', '')
+        num_results = data.get('num_results', 3)
+        
+        serper_api_key = os.getenv('SERPER_API_KEY')
+        if not serper_api_key:
+            return jsonify({
+                'success': False,
+                'error': 'Serper API key not configured',
+                'products': []
+            })
+        
+        # Direct Serper API call
+        headers = {
+            'X-API-KEY': serper_api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'q': query,
+            'num': num_results,
+            'gl': 'us'
+        }
+        
+        print(f"[search-products] Searching for: {query}")
+        response = requests.post('https://google.serper.dev/shopping', headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            results = response.json()
+            products = []
+            
+            # Process all results to ensure brand diversity
+            brand_count = {}
+            max_per_brand = 2  # Maximum items per brand
+            
+            for item in results.get('shopping', []):
+                title = item.get('title', '')
+                # Use source as brand - it's the actual brand/retailer name
+                brand = item.get('source', 'Unknown')
+                
+                # Track brand count
+                if brand not in brand_count:
+                    brand_count[brand] = 0
+                
+                # Only add if we haven't exceeded max per brand
+                if brand_count[brand] < max_per_brand and len(products) < num_results:
+                    brand_count[brand] += 1
+                    
+                    products.append({
+                        'title': title,
+                        'price': item.get('price', 'N/A'),
+                        'image': item.get('imageUrl', ''),
+                        'link': item.get('link', ''),
+                        'source': brand,
+                        'brand': brand,  # Use source as brand
+                        'name': title  # alias for compatibility
+                    })
+                    
+                    print(f"[search-products] Added: {title[:50]}... Brand: {brand}")
+                    
+                # Stop if we have enough products
+                if len(products) >= num_results:
+                    break
+            
+            print(f"[search-products] Found {len(products)} products")
+            return jsonify({
+                'success': True,
+                'products': products
+            })
+        else:
+            print(f"[search-products] Serper API error: {response.status_code}")
+            return jsonify({
+                'success': False,
+                'error': f'Serper API error: {response.status_code}',
+                'products': []
+            })
+            
+    except Exception as e:
+        print(f"[search-products] Error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'products': []
+        }), 500
+
+@app.route('/moodboard/latest/<user_id>', methods=['GET'])
+def get_latest_moodboard(user_id):
+    """Get the latest saved moodboard from Firebase Storage"""
+    print(f"\n[moodboard/latest] Getting latest moodboard for user {user_id}")
+    
+    try:
+        # Try to get the latest moodboard from Storage
+        blob_name = f"users/{user_id}/moodboard/latest.json"
+        blob = bucket.blob(blob_name)
+        
+        if blob.exists():
+            # Download as string
+            json_data = blob.download_as_text()
+            moodboard_data = json.loads(json_data)
+            
+            print(f"[moodboard/latest] Found latest moodboard from {moodboard_data.get('saved_at')}")
+            
+            return jsonify({
+                'success': True,
+                'moodboard': moodboard_data
+            })
+        else:
+            print(f"[moodboard/latest] No saved moodboard found for user {user_id}")
+            return jsonify({
+                'success': False,
+                'message': 'No saved moodboard found'
+            })
+            
+    except Exception as e:
+        print(f"[moodboard/latest] Error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/gemini-analyze', methods=['POST', 'OPTIONS'])
+def gemini_analyze():
+    """Analyze data using Gemini"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    print("\n[gemini-analyze] Processing request")
+    try:
+        data = request.json
+        prompt = data.get('prompt', '')
+        
+        if not prompt:
+            return jsonify({'error': 'No prompt provided'}), 400
+        
+        print(f"[gemini-analyze] Prompt length: {len(prompt)} chars")
+        print(f"[gemini-analyze] Prompt preview: {prompt[:200]}...")
+            
+        gemini_service = GeminiService()
+        
+        # Check if Gemini is initialized
+        if not gemini_service.genai:
+            print("[gemini-analyze] Gemini not initialized")
+            return jsonify({'error': 'Gemini service not initialized'}), 500
+        
+        # Create a text-only model for analysis
+        model = gemini_service.genai.GenerativeModel('gemini-2.0-flash-exp')
+        
+        # Generate response
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        print(f"[gemini-analyze] Gemini response: {response_text}")
+        
+        return jsonify({'success': True, 'response': response_text})
+    except Exception as e:
+        print(f"[gemini-analyze] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/moodboard/save', methods=['POST'])
+def save_moodboard_data():
+    """Save moodboard data to Firebase Storage as JSON"""
+    print("\n[moodboard/save] Processing save request")
+    
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        moodboard_data = data.get('data')
+        
+        if not user_id or not moodboard_data:
+            return jsonify({'error': 'Missing required data'}), 400
+        
+        # Debug the data being saved
+        print(f"[moodboard/save] Data keys: {list(moodboard_data.keys())}")
+        if 'wardrobeGapProducts' in moodboard_data:
+            print(f"[moodboard/save] Wardrobe gap products count: {len(moodboard_data.get('wardrobeGapProducts', []))}")
+        
+        # Add metadata
+        moodboard_data['saved_at'] = datetime.now().isoformat()
+        
+        # Convert to JSON
+        json_data = json.dumps(moodboard_data)
+        
+        # Save to Firebase Storage
+        blob_name = f"users/{user_id}/moodboard/latest.json"
+        blob = bucket.blob(blob_name)
+        blob.upload_from_string(json_data, content_type='application/json')
+        
+        # Also save a timestamped backup
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_blob_name = f"users/{user_id}/moodboard/backup_{timestamp}.json"
+        backup_blob = bucket.blob(backup_blob_name)
+        backup_blob.upload_from_string(json_data, content_type='application/json')
+        
+        print(f"[moodboard/save] Saved moodboard data for user {user_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Moodboard saved successfully',
+            'path': blob_name
+        })
+        
+    except Exception as e:
+        print(f"[moodboard/save] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     import atexit

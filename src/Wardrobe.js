@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import './globalStyles.css';
 import './Wardrobe.css';
 import UploadSegmentModal from './UploadSegmentModal';
 import { getUserImages, deleteUserImage, getMaskData } from './storageService';
 import { saveVirtualTryOn, clearLocalStorageIfNeeded } from './virtualClosetService';
 import API_URL from './config';
+import Loader from './components/Loader';
 
-function Wardrobe({ user, onBack }) {
+function Wardrobe({ user }) {
   const [wardrobeItems, setWardrobeItems] = useState([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -24,7 +26,6 @@ function Wardrobe({ user, onBack }) {
   const [showOriginalImage, setShowOriginalImage] = useState(false); // Toggle between original and generated
   
   // TEST: Using Segformer Model - Updated at 2:35 AM
-  console.log("🚀 WARDROBE UPDATED: Now using Segformer model instead of MediaPipe+SAM2+CLIP");
 
   // Load user's wardrobe items
   useEffect(() => {
@@ -61,8 +62,11 @@ function Wardrobe({ user, onBack }) {
     }
   };
 
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = async () => {
     setShowUploadModal(false);
+    // Clear cache and force refresh
+    const { clearWardrobeCache } = await import('./storageService');
+    clearWardrobeCache(user.uid);
     loadWardrobeItems(); // Refresh the wardrobe
   };
 
@@ -213,18 +217,14 @@ function Wardrobe({ user, onBack }) {
   };
 
   return (
-    <div className="wardrobe-container">
-      <header className="wardrobe-header">
-        <button onClick={onBack} className="back-button">
-          ← Back
-        </button>
-        <h1>My Wardrobe</h1>
-        <div className="header-spacer"></div>
-      </header>
-
-      <div className="wardrobe-content">
+    <div className="page-container">
+      <div className="wardrobe-container">
+        <div className="wardrobe-tagline">
+          Capture your style – Upload full-body shots and watch your digital wardrobe come to life
+        </div>
+        <div className="wardrobe-content">
         {loading ? (
-          <div className="loading-spinner">Loading wardrobe...</div>
+          <Loader message="Loading wardrobe" />
         ) : (
           <div className="wardrobe-grid">
             {/* Upload card - always first */}
@@ -270,7 +270,6 @@ function Wardrobe({ user, onBack }) {
                 <img 
                   src={item.url} 
                   alt={`Wardrobe item ${index + 1}`} 
-                  style={{ backgroundColor: '#f5f5f5' }}
                 />
                 <div className="item-overlay">
                   <button
@@ -286,6 +285,15 @@ function Wardrobe({ user, onBack }) {
                 <div className="item-info">
                   <p>{item.name}</p>
                 </div>
+
+                <button
+                  className="try-on-button"
+                  onClick={performGeminiTryOn}
+                  disabled={tryOnProcessing || Object.keys(selectedReplacements).length === 0}
+                  style={{ marginTop: '20px' }}
+                >
+                  {tryOnProcessing ? 'Processing...' : '✨ Generate Try-On'}
+                </button>
               </div>
             ))}
           </div>
@@ -320,7 +328,6 @@ function Wardrobe({ user, onBack }) {
             
             <div className="item-detail-grid">
               <div className="original-image-section">
-                <h3>Original Image</h3>
                 <img src={selectedItem.url} alt={selectedItem.name} />
               </div>
               
@@ -330,11 +337,6 @@ function Wardrobe({ user, onBack }) {
                   <p>Loading segments...</p>
                 ) : selectedItemMasks ? (
                   <div className="segments-info">
-                    <div className="segment-count">
-                      <p>👔 Shirts: {selectedItemMasks.classifications?.shirt || 0}</p>
-                      <p>👖 Pants: {selectedItemMasks.classifications?.pants || 0}</p>
-                      <p>👟 Shoes: {selectedItemMasks.classifications?.shoes || 0}</p>
-                    </div>
                     <div className="segment-images">
                       {/* Show mask images if available */}
                       {['shirt', 'pants', 'shoes'].map(type => {
@@ -361,7 +363,6 @@ function Wardrobe({ user, onBack }) {
                             <img 
                               src={imageSrc}
                               alt={`${type} mask`}
-                              style={{ backgroundColor: '#f8f8f8' }}
                             />
                           </div>
                         );
@@ -495,7 +496,7 @@ function Wardrobe({ user, onBack }) {
                     ))}
                   </div>
                 </div>
-
+                
                 <button
                   className="try-on-button"
                   onClick={performGeminiTryOn}
@@ -511,9 +512,8 @@ function Wardrobe({ user, onBack }) {
               <div className="try-on-results">
                 <div className="results-layout">
                   <div className="result-main">
-                    <div className="result-header">
-                      <h3>{showOriginalImage ? 'Original Image' : 'Generated Result'}</h3>
-                      <label className="switch-toggle">
+                    <div className="result-image-container">
+                      <label className="switch-toggle image-toggle">
                         <input 
                           type="checkbox"
                           checked={showOriginalImage}
@@ -521,12 +521,12 @@ function Wardrobe({ user, onBack }) {
                         />
                         <span className="slider"></span>
                       </label>
+                      <img 
+                        src={showOriginalImage ? selectedItem.url : `data:image/png;base64,${tryOnResult}`} 
+                        alt={showOriginalImage ? "Original" : "Try-on result"} 
+                        className="result-image"
+                      />
                     </div>
-                    <img 
-                      src={showOriginalImage ? selectedItem.url : `data:image/png;base64,${tryOnResult}`} 
-                      alt={showOriginalImage ? "Original" : "Try-on result"} 
-                      className="result-image"
-                    />
                   </div>
 
                   <div className="items-used">
@@ -587,6 +587,7 @@ function Wardrobe({ user, onBack }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

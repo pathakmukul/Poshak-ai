@@ -335,8 +335,14 @@ class FirebaseService:
                 },
                 'closet_visualizations': segmentation_results.get('closet_visualizations', {}),
                 'binary_masks': segmentation_results.get('binary_masks', {}),
+                'descriptions': segmentation_results.get('descriptions', {}),
                 'originalImageUrl': upload_result['url']
             }
+            
+            # Debug logging for descriptions
+            print(f"\n[FirebaseService] Saving mask data for {image_name}")
+            print(f"  Descriptions in segmentation_results: {segmentation_results.get('descriptions', {})}")
+            print(f"  Descriptions being saved: {mask_data['descriptions']}")
             
             # Debug logging
             print(f"\n[save_processed_results] Saving closet visualizations:")
@@ -372,6 +378,63 @@ class FirebaseService:
                 'success': False,
                 'error': str(e)
             }
+    
+    @staticmethod
+    def get_all_user_clothing_data(user_id):
+        """Get all clothing data for a user in a single optimized call"""
+        try:
+            # Get all mask files in one go
+            mask_blobs = bucket.list_blobs(prefix=f'users/{user_id}/masks/')
+            
+            all_data = {}
+            
+            for blob in mask_blobs:
+                if blob.name.endswith('.json'):
+                    # Download and parse the JSON
+                    mask_data = json.loads(blob.download_as_text())
+                    
+                    # Extract image name from path
+                    image_name = blob.name.split('/')[-1].replace('.json', '')
+                    
+                    all_data[image_name] = mask_data
+            
+            return {'success': True, 'data': all_data}
+            
+        except Exception as e:
+            print(f"Error getting all user clothing data: {str(e)}")
+            return {'success': False, 'error': str(e), 'data': {}}
+    
+    def save_trends_cache(self, cache_key, data):
+        """Save fashion trends to Firebase cache"""
+        try:
+            doc_ref = db.collection('trends_cache').document(cache_key)
+            doc_ref.set({
+                'data': data,
+                'timestamp': datetime.now(),
+                'created_at': datetime.now().isoformat()
+            })
+            return True
+        except Exception as e:
+            print(f"Error saving trends cache: {str(e)}")
+            return False
+    
+    def save_recommendations_cache(self, user_id, cache_key, data):
+        """Save shopping recommendations to Firebase cache"""
+        try:
+            if user_id:
+                doc_ref = db.collection('users').document(user_id).collection('recommendations_cache').document(cache_key)
+            else:
+                doc_ref = db.collection('recommendations_cache').document(cache_key)
+                
+            doc_ref.set({
+                'data': data,
+                'timestamp': datetime.now(),
+                'created_at': datetime.now().isoformat()
+            })
+            return True
+        except Exception as e:
+            print(f"Error saving recommendations cache: {str(e)}")
+            return False
 
 # Legacy function for backwards compatibility
 def save_segmentation_results(user_id, image_data, segmentation_results, original_image_base64):

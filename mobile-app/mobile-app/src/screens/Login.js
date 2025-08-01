@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { loginUser, DUMMY_USERS, initializeDummyUsers } from '../firebase';
+import { loginUser, DUMMY_USERS } from '../firebase';
 
 function Login({ onLogin }) {
   const [selectedUser, setSelectedUser] = useState('');
@@ -54,9 +54,7 @@ function Login({ onLogin }) {
     } catch (err) {
       console.error('Login error:', err);
       if (err.code === 'auth/user-not-found') {
-        setError('User not found. Initializing users...');
-        await initializeDummyUsers();
-        setError('Please try again');
+        setError('User not found. Please ensure test users exist in Firebase Console.');
       } else {
         setError('Login failed. Please try again.');
       }

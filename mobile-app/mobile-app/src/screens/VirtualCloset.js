@@ -12,7 +12,9 @@ import {
   ScrollView,
   Alert,
   RefreshControl,
+  Platform,
 } from 'react-native';
+import ScreenHeader from '../components/ScreenHeader';
 import config from '../config';
 import { getVirtualClosetItems, deleteVirtualClosetItem } from '../services/virtualClosetService';
 
@@ -115,15 +117,12 @@ function VirtualCloset({ navigation, user }) {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Virtual Closet</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
+    <View style={styles.container}>
+      <ScreenHeader 
+        title="Virtual Closet"
+        onBack={() => navigation.goBack()}
+      />
+      
       {loading ? (
         <ActivityIndicator size="large" color="#4CAF50" style={styles.loader} />
       ) : (
@@ -152,7 +151,7 @@ function VirtualCloset({ navigation, user }) {
           transparent={true}
           onRequestClose={() => setShowDetailModal(false)}
         >
-          <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
                 <TouchableOpacity onPress={() => setShowDetailModal(false)}>
@@ -209,35 +208,17 @@ function VirtualCloset({ navigation, user }) {
                 </Text>
               </ScrollView>
             </View>
-          </SafeAreaView>
+          </View>
         </Modal>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  backButton: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  title: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
+    backgroundColor: '#000000',
   },
   loader: {
     flex: 1,

@@ -37,19 +37,8 @@ export const DUMMY_USERS = [
   { email: 'demo.account@poshakai.test', password: 'password123', displayName: 'Demo Account' }
 ];
 
-// Helper function to create dummy users in emulator
-export const initializeDummyUsers = async () => {
-  for (const user of DUMMY_USERS) {
-    try {
-      await createUserWithEmailAndPassword(auth, user.email, user.password);
-      console.log(`Created user: ${user.displayName}`);
-    } catch (error) {
-      if (error.code !== 'auth/email-already-in-use') {
-        console.error(`Error creating user ${user.displayName}:`, error);
-      }
-    }
-  }
-};
+// REMOVED: initializeDummyUsers function to prevent duplicate user creation
+// Use existing users from Firebase Console instead
 
 // Auth functions
 export const loginUser = async (email, password) => {

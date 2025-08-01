@@ -1,7 +1,6 @@
 # Visualization service for clothing detection
-import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
 import base64
 
@@ -92,7 +91,8 @@ def create_clothing_visualization(image_rgb, masks, clothing_type, for_gemini=Fa
         # Apply colored mask
         mask_colored = np.zeros_like(overlay)
         mask_colored[mask] = colors[i % len(colors)]
-        overlay = cv2.addWeighted(overlay, 0.7, mask_colored, 0.3, 0)
+        # Blend using PIL instead of cv2
+        overlay = (overlay * 0.7 + mask_colored * 0.3).astype(np.uint8)
         
         # Add label text only if not for Gemini
         if not for_gemini:
@@ -101,14 +101,28 @@ def create_clothing_visualization(image_rgb, masks, clothing_type, for_gemini=Fa
                 cy = int(y_indices.mean())
                 cx = int(x_indices.mean())
                 
-                overlay_bgr = cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR)
                 text = f"{label.upper()}"
+                # Use PIL for text drawing
+                overlay_pil = Image.fromarray(overlay)
+                draw = ImageDraw.Draw(overlay_pil)
                 
-                (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)
-                cv2.rectangle(overlay_bgr, (cx-5, cy-text_h-5), (cx+text_w+5, cy+5), (0,0,0), -1)
-                cv2.putText(overlay_bgr, text, (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255,255,255), 2)
+                # Try to use a default font, fallback to basic if not available
+                try:
+                    font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 24)
+                except:
+                    font = ImageFont.load_default()
                 
-                overlay = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
+                # Get text size
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+                
+                # Draw rectangle background
+                draw.rectangle([(cx-5, cy-text_h-5), (cx+text_w+5, cy+5)], fill=(0,0,0))
+                # Draw text
+                draw.text((cx, cy-text_h), text, fill=(255,255,255), font=font)
+                
+                overlay = np.array(overlay_pil)
     
     return overlay, len(clothing_masks)
 
@@ -330,8 +344,15 @@ def create_raw_segformer_visualization(image_rgb, masks):
     if not masks:
         # Return a simple image with "No masks detected" text
         canvas = np.ones((400, 600, 3), dtype=np.uint8) * 240
-        cv2.putText(canvas, "No masks detected", (150, 200), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, (100, 100, 100), 2)
+        # Use PIL for text
+        canvas_pil = Image.fromarray(canvas)
+        draw = ImageDraw.Draw(canvas_pil)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 30)
+        except:
+            font = ImageFont.load_default()
+        draw.text((150, 200), "No masks detected", fill=(100, 100, 100), font=font)
+        canvas = np.array(canvas_pil)
         return canvas
     
     # Calculate grid size
@@ -347,8 +368,15 @@ def create_raw_segformer_visualization(image_rgb, masks):
     
     # Add title
     title = f"All Segformer Segments: {n_masks} masks detected"
-    cv2.putText(canvas, title, (20, 35), 
-               cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 2)
+    # Use PIL for title text
+    canvas_pil = Image.fromarray(canvas)
+    draw = ImageDraw.Draw(canvas_pil)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 30)
+    except:
+        font = ImageFont.load_default()
+    draw.text((20, 35), title, fill=(0, 0, 0), font=font)
+    canvas = np.array(canvas_pil)
     
     # Sort masks by area (largest first)
     masks_sorted = sorted(masks, key=lambda x: x.get('area', 0), reverse=True)
@@ -376,16 +404,21 @@ def create_raw_segformer_visualization(image_rgb, masks):
         mask_color = colors[idx % len(colors)]
         mask_viz[mask] = mask_viz[mask] * 0.3 + np.array(mask_color) * 0.7
         
-        # Draw mask boundary
-        contours, _ = cv2.findContours(mask.astype(np.uint8), 
-                                      cv2.RETR_EXTERNAL, 
-                                      cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(mask_viz, contours, -1, mask_color, 2)
+        # Draw mask boundary using edge detection
+        mask_pil = Image.fromarray((mask * 255).astype(np.uint8))
+        # Find edges
+        edges = mask_pil.filter(ImageFilter.FIND_EDGES)
+        edges_array = np.array(edges)
+        # Apply colored edges
+        edge_mask = edges_array > 0
+        mask_viz[edge_mask] = mask_color
         
         # Resize to cell size
         scale = min(cell_size / h, cell_size / w)
         new_h, new_w = int(h * scale), int(w * scale)
-        mask_viz_resized = cv2.resize(mask_viz, (new_w, new_h))
+        # Use PIL for resizing
+        mask_viz_pil = Image.fromarray(mask_viz.astype(np.uint8))
+        mask_viz_resized = np.array(mask_viz_pil.resize((new_w, new_h), Image.Resampling.LANCZOS))
         
         # Center in cell
         y_offset = (cell_size - new_h) // 2
@@ -400,9 +433,18 @@ def create_raw_segformer_visualization(image_rgb, masks):
         area_pct = (mask_dict['area'] / (h * w)) * 100
         size_text = f"{area_pct:.1f}%"
         
-        cv2.putText(canvas, info_text, (x_start + 10, y_start + 25), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        cv2.putText(canvas, size_text, (x_start + 10, y_start + cell_size - 10), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
+        # Add text to canvas using PIL
+        canvas_pil = Image.fromarray(canvas)
+        draw = ImageDraw.Draw(canvas_pil)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 16)
+            font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 14)
+        except:
+            font = ImageFont.load_default()
+            font_small = font
+        
+        draw.text((x_start + 10, y_start + 25), info_text, fill=(0, 0, 0), font=font)
+        draw.text((x_start + 10, y_start + cell_size - 10), size_text, fill=(0, 0, 0), font=font_small)
+        canvas = np.array(canvas_pil)
     
     return canvas

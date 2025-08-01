@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { getUserClothingItems } from '../services/closetService';
 import SmartCropImage from '../components/SmartCropImage';
+import ScreenHeader from '../components/ScreenHeader';
 
 function Closet({ user, navigation }) {
   const [activeTab, setActiveTab] = useState('shirts');
@@ -144,7 +146,12 @@ function Closet({ user, navigation }) {
   const currentItems = clothingItems[activeTab];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <ScreenHeader 
+        title="My Closet"
+        onBack={() => navigation.goBack()}
+      />
+      
       {/* Tab Bar */}
       <View style={styles.tabBar}>
         {tabs.map((tab) => (
@@ -186,14 +193,14 @@ function Closet({ user, navigation }) {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000000',
   },
   centerContainer: {
     flex: 1,

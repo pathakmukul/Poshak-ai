@@ -5,8 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
+  Platform,
 } from 'react-native';
+import ScreenHeader from '../components/ScreenHeader';
 
 function Home({ navigation, user, onLogout }) {
   const navigateToScreen = (screen) => {
@@ -14,18 +15,18 @@ function Home({ navigation, user, onLogout }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.userInfo}>
-            <Text style={styles.userIcon}>👤</Text>
-            <Text style={styles.userName}>{user.username}</Text>
-          </View>
-          <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenHeader 
+          title="KapdaAI"
+          showBack={false}
+          largeTitle={true}
+          rightIcon={
+            <TouchableOpacity style={styles.profileButton} onPress={onLogout}>
+              <Text style={styles.profileIcon}>👤</Text>
+            </TouchableOpacity>
+          }
+        />
 
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
@@ -73,34 +74,25 @@ function Home({ navigation, user, onLogout }) {
 
           <TouchableOpacity 
             style={styles.actionCard} 
-            onPress={() => navigateToScreen('OpenAISwitch')}
+            onPress={() => navigateToScreen('StyleAssistant')}
           >
-            <Text style={styles.cardIcon}>🎨</Text>
-            <Text style={styles.cardTitle}>OpenAI Switch</Text>
-            <Text style={styles.cardDescription}>Generate outfits with AI-powered variations</Text>
-            <View style={styles.cardButton}>
-              <Text style={styles.cardButtonText}>Try Now →</Text>
-            </View>
-          </TouchableOpacity>
-
-          <View style={[styles.actionCard, styles.comingSoonCard]}>
             <Text style={styles.cardIcon}>✨</Text>
             <Text style={styles.cardTitle}>Style Assistant</Text>
             <Text style={styles.cardDescription}>Get AI-powered outfit recommendations</Text>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Coming Soon</Text>
+            <View style={styles.cardButton}>
+              <Text style={styles.cardButtonText}>Chat Now →</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000000',
   },
   scrollContent: {
     padding: 20,
@@ -109,30 +101,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
     marginBottom: 30,
   },
-  userInfo: {
-    flexDirection: 'row',
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  profileButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  userIcon: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  userName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  logoutButton: {
-    backgroundColor: '#ff4444',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  logoutText: {
-    color: '#fff',
-    fontWeight: '600',
+  profileIcon: {
+    fontSize: 18,
   },
   welcomeSection: {
     alignItems: 'center',

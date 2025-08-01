@@ -14,6 +14,7 @@ import VirtualCloset from './src/screens/VirtualCloset';
 import Closet from './src/screens/Closet';
 import OpenAISwitch from './src/screens/OpenAISwitch';
 import UploadSegment from './src/screens/UploadSegment';
+import StyleAssistant from './src/screens/StyleAssistant';
 
 const Stack = createStackNavigator();
 
@@ -73,58 +74,34 @@ export default function App() {
       <NavigationContainer>
         <Stack.Navigator
           screenOptions={{
-            headerStyle: {
-              backgroundColor: '#2a2a2a',
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
+            headerShown: false, // Hide ALL headers
           }}
         >
           {!currentUser ? (
-            <Stack.Screen 
-              name="Login" 
-              options={{ headerShown: false }}
-            >
+            <Stack.Screen name="Login">
               {props => <Login {...props} onLogin={handleLogin} />}
             </Stack.Screen>
           ) : (
             <>
-              <Stack.Screen 
-                name="Home" 
-                options={{ title: 'KapdaAI' }}
-              >
+              <Stack.Screen name="Home">
                 {props => <Home {...props} user={currentUser} onLogout={handleLogout} />}
               </Stack.Screen>
-              <Stack.Screen 
-                name="Wardrobe" 
-                options={{ title: 'My Wardrobe' }}
-              >
+              <Stack.Screen name="Wardrobe">
                 {props => <Wardrobe {...props} user={currentUser} />}
               </Stack.Screen>
-              <Stack.Screen 
-                name="Closet" 
-                options={{ title: 'My Closet' }}
-              >
+              <Stack.Screen name="Closet">
                 {props => <Closet {...props} user={currentUser} />}
               </Stack.Screen>
-              <Stack.Screen 
-                name="VirtualCloset" 
-                options={{ title: 'Virtual Closet' }}
-              >
+              <Stack.Screen name="VirtualCloset">
                 {props => <VirtualCloset {...props} user={currentUser} />}
               </Stack.Screen>
-              <Stack.Screen 
-                name="OpenAISwitch" 
-                options={{ title: 'OpenAI Switch' }}
-              >
+              <Stack.Screen name="OpenAISwitch">
                 {props => <OpenAISwitch {...props} user={currentUser} />}
               </Stack.Screen>
-              <Stack.Screen 
-                name="UploadSegment" 
-                options={{ title: 'Process Image' }}
-              >
+              <Stack.Screen name="StyleAssistant">
+                {props => <StyleAssistant {...props} user={currentUser} onLogout={handleLogout} />}
+              </Stack.Screen>
+              <Stack.Screen name="UploadSegment">
                 {props => <UploadSegment {...props} user={currentUser} />}
               </Stack.Screen>
             </>

@@ -1,5 +1,10 @@
 // All Firebase operations go through Flask backend
 // No direct Firebase imports needed
+import { clearUserClothingCache } from './closetService';
+
+// Simple cache for wardrobe images
+const wardrobeCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Upload user image - This should be handled by UploadSegmentModal which calls Flask
 export const uploadUserImage = async (userId, file) => {
@@ -10,19 +15,45 @@ export const uploadUserImage = async (userId, file) => {
   };
 };
 
-// Get user's images via Flask backend
-export const getUserImages = async (userId) => {
+// Get user's images via Flask backend with caching
+export const getUserImages = async (userId, forceRefresh = false) => {
   try {
+    // Check cache first unless force refresh
+    if (!forceRefresh) {
+      const cached = wardrobeCache.get(userId);
+      if (cached && cached.timestamp > Date.now() - CACHE_DURATION) {
+        console.log('Using cached wardrobe images');
+        return cached.data;
+      }
+    }
+    
+    console.log('Fetching wardrobe images from server...');
     const response = await fetch(`http://localhost:5001/firebase/images/${userId}`);
     if (!response.ok) {
       throw new Error('Failed to fetch images');
     }
     const data = await response.json();
+    
+    // Cache successful response
+    if (data.success) {
+      wardrobeCache.set(userId, {
+        data: data,
+        timestamp: Date.now()
+      });
+      console.log('Wardrobe images cached successfully');
+    }
+    
     return data;
   } catch (error) {
     console.error('Error getting user images:', error);
     return { success: false, error: error.message, images: [] };
   }
+};
+
+// Clear wardrobe cache for a user
+export const clearWardrobeCache = (userId) => {
+  wardrobeCache.delete(userId);
+  console.log('Wardrobe cache cleared for user:', userId);
 };
 
 // Save mask data - This should be handled by Flask
@@ -120,6 +151,14 @@ export const deleteUserImage = async (userId, imagePath) => {
     }
     
     const data = await response.json();
+    
+    // Clear cache after successful deletion
+    if (data.success) {
+      clearWardrobeCache(userId);
+      clearUserClothingCache(userId);
+      console.log('Wardrobe and clothing cache cleared after image deletion');
+    }
+    
     return data;
   } catch (error) {
     console.error('Error deleting image:', error);

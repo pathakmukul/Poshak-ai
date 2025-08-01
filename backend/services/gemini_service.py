@@ -12,7 +12,6 @@ The key difference:
 """
 
 # Removed Flask dependencies - this is now a pure service class
-import cv2
 import os
 import numpy as np
 import base64
@@ -21,6 +20,7 @@ import io
 from PIL import Image
 import time
 import requests
+import json
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -39,8 +39,14 @@ class GeminiService:
     def __init__(self):
         """Initialize Gemini service with API key"""
         self.api_key = os.getenv("GEMINI_API_KEY")
+        self.genai = None
+        
         if self.api_key and GEMINI_AVAILABLE:
             genai.configure(api_key=self.api_key)
+            self.genai = genai
+            print(f"[GeminiService] Initialized with API key: {self.api_key[:10]}...")
+        else:
+            print(f"[GeminiService] NOT initialized - API key: {bool(self.api_key)}, Package available: {GEMINI_AVAILABLE}")
     
     def get_gemini_data(self, image_path, clothing_type, last_masks, last_image_rgb=None):
         """Get original image and mask for Gemini (no overlay, just raw data)
@@ -67,8 +73,11 @@ class GeminiService:
                 # Load original image from path
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 full_image_path = os.path.join(base_dir, image_path)
-                image = cv2.imread(full_image_path)
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # Use PIL instead of cv2
+                image_pil = Image.open(full_image_path)
+                if image_pil.mode != 'RGB':
+                    image_pil = image_pil.convert('RGB')
+                image_rgb = np.array(image_pil)
             else:
                 return {'error': 'No image available. Process an image first.'}, 400
             
@@ -165,14 +174,11 @@ class GeminiService:
                 response = requests.get(image_url)
                 response.raise_for_status()
                 
-                # Convert to numpy array
-                nparr = np.frombuffer(response.content, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                if image is None:
-                    return {'error': 'Failed to decode image from URL'}, 500
-                    
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # Use PIL instead of cv2
+                image_pil = Image.open(io.BytesIO(response.content))
+                if image_pil.mode != 'RGB':
+                    image_pil = image_pil.convert('RGB')
+                image_rgb = np.array(image_pil)
                 h, w = image_rgb.shape[:2]
                 print(f"\n=== DIMENSION CHECK IN prepare_wardrobe_gemini ===")
                 print(f"Downloaded image from Firebase: {w}x{h} (width x height)")
@@ -583,7 +589,9 @@ Please replace only the masked area with the new {clothing_type}, keeping everyt
                         combined_mask_np[:, :, 3] = np.maximum(combined_mask_np[:, :, 3], mask_array[:, :, 3])
                     else:  # RGB mask
                         # Convert to grayscale and use as alpha
-                        mask_gray = cv2.cvtColor(mask_array, cv2.COLOR_RGB2GRAY)
+                        # Convert RGB to grayscale using PIL
+                        mask_pil = Image.fromarray(mask_array)
+                        mask_gray = np.array(mask_pil.convert('L'))
                         combined_mask_np[:, :, 3] = np.maximum(combined_mask_np[:, :, 3], mask_gray)
                     
                 except Exception as e:
@@ -611,13 +619,33 @@ Please replace only the masked area with the new {clothing_type}, keeping everyt
                     continue
                     
                 garment_file = garment_files[clothing_type]
-                garment_path = os.path.join(parent_dir, 'data', 'sample_images', 'garments', garment_file)
-                try:
-                    garment_pil = Image.open(garment_path).convert('RGB')
-                    garment_images.append((clothing_type, garment_pil))
-                except Exception as e:
-                    print(f"Error loading garment for {clothing_type}: {str(e)}")
-                    continue
+                
+                # Check if it's a base64 image or a file path
+                if garment_file.startswith('data:image'):
+                    # It's a base64 data URL
+                    try:
+                        # Extract base64 data from data URL
+                        if ',' in garment_file:
+                            garment_data = base64.b64decode(garment_file.split(',')[1])
+                        else:
+                            garment_data = base64.b64decode(garment_file)
+                        
+                        garment_pil = Image.open(BytesIO(garment_data)).convert('RGB')
+                        garment_images.append((clothing_type, garment_pil))
+                        print(f"Loaded base64 garment for {clothing_type}")
+                    except Exception as e:
+                        print(f"Error loading base64 garment for {clothing_type}: {str(e)[:100]}...")  # Truncate error
+                        continue
+                else:
+                    # It's a file path (existing behavior)
+                    garment_path = os.path.join(parent_dir, 'data', 'sample_images', 'garments', garment_file)
+                    try:
+                        garment_pil = Image.open(garment_path).convert('RGB')
+                        garment_images.append((clothing_type, garment_pil))
+                        print(f"Loaded file garment for {clothing_type}: {garment_file}")
+                    except Exception as e:
+                        print(f"Error loading garment file for {clothing_type}: {str(e)[:100]}...")  # Truncate error
+                        continue
             
             # Create prompt for multiple items - clearer about image order
             items_str = " and ".join(clothing_types)
@@ -632,6 +660,12 @@ Images provided (in order):
 {len(garment_images)+2}. Combined mask showing all areas to replace (opaque = replace, transparent = keep)
 
 Please replace only the masked areas with the corresponding new items, keeping everything else unchanged."""
+            
+            print(f"\n{'='*50}", flush=True)
+            print(f"FULL PROMPT BEING SENT TO GEMINI:", flush=True)
+            print(f"{'='*50}", flush=True)
+            print(prompt, flush=True)
+            print(f"{'='*50}\n", flush=True)
             
             # Prepare inputs for Gemini - CORRECT ORDER: Person, Garments, then Mask
             inputs = [prompt, person_pil]
@@ -695,3 +729,114 @@ Please replace only the masked areas with the corresponding new items, keeping e
             import traceback
             traceback.print_exc()
             return {'error': f'Gemini API error: {str(e)}'}, 500
+
+    def generate_clothing_descriptions(self, image_base64, detected_items):
+        """
+        Generate descriptions for detected clothing items using Gemini
+        
+        Args:
+            image_base64: Base64 encoded image
+            detected_items: Dict with clothing types as keys, empty values
+                          e.g., {"shirt": "", "pants": "", "shoes": ""}
+        
+        Returns:
+            dict: Same structure with filled descriptions
+        """
+        if not self.genai:
+            return {'error': 'Gemini API not initialized'}, 500
+        
+        try:
+            # Decode base64 image
+            if image_base64.startswith('data:'):
+                image_base64 = image_base64.split(',')[1]
+            
+            image_bytes = base64.b64decode(image_base64)
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            # Create prompt for Gemini
+            prompt = f"""You are a fashion AI assistant. Analyze this image and provide brief, comma-separated descriptions for each detected clothing item.
+
+Detected items to describe:
+{json.dumps(detected_items, indent=2)}
+
+For each item, provide a concise description focusing on:
+- Color/pattern
+- Style/type
+- Material/texture (if visible)
+- Key features
+
+IMPORTANT: 
+1. Respond ONLY with a valid JSON object in the exact same format as the input
+2. Fill in the empty string values with descriptions
+3. Use comma-separated attributes in each description
+4. Keep descriptions concise (3-5 attributes max)
+5. If an item is not clearly visible, put "not clearly visible"
+
+Example response:
+{{"shirt": "white, cotton, button-down, long-sleeve", "pants": "blue, denim, straight-fit", "shoes": "black, leather, formal"}}
+
+Respond with ONLY the JSON object, no other text."""
+
+            # Use Gemini 2.0 Flash for quick analysis
+            model = self.genai.GenerativeModel('gemini-2.0-flash-exp')
+            
+            # Configure for JSON response
+            generation_config = {
+                "temperature": 0.3,  # Lower temperature for consistency
+                "top_p": 0.8,
+                "top_k": 40,
+                "max_output_tokens": 500,
+            }
+            
+            print(f"\n[GeminiService] Generating descriptions...")
+            print(f"  Detected items: {list(detected_items.keys())}")
+            
+            # Generate descriptions
+            response = model.generate_content(
+                [prompt, image],
+                generation_config=generation_config
+            )
+            
+            print(f"  Gemini raw response: {response.text}")
+            
+            # Parse JSON response
+            try:
+                # Clean the response text
+                response_text = response.text.strip()
+                # Remove markdown code blocks if present
+                if response_text.startswith('```'):
+                    response_text = response_text.split('```')[1]
+                    if response_text.startswith('json'):
+                        response_text = response_text[4:]
+                    response_text = response_text.strip()
+                
+                descriptions = json.loads(response_text)
+                
+                print(f"  Parsed descriptions: {descriptions}")
+                
+                # Validate response has same keys as input
+                if set(descriptions.keys()) != set(detected_items.keys()):
+                    print(f"  Warning: Response keys don't match input keys")
+                    # Fill missing keys with empty strings
+                    for key in detected_items:
+                        if key not in descriptions:
+                            descriptions[key] = "not detected"
+                
+                print(f"  Final descriptions being returned: {descriptions}")
+                return descriptions, 200
+                
+            except json.JSONDecodeError as e:
+                print(f"Failed to parse Gemini response as JSON: {response.text}")
+                return {
+                    'error': 'Invalid JSON response from Gemini',
+                    'raw_response': response.text
+                }, 500
+        
+        except Exception as e:
+            print(f"Error generating descriptions: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'error': 'Failed to generate descriptions',
+                'details': str(e)
+            }, 500
