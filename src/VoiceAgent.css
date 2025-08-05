@@ -1,0 +1,374 @@
+/* Voice Agent Styles */
+.voice-agent-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* Back Button */
+.back-button {
+  position: absolute;
+  top: 2rem;
+  left: 2rem;
+  background: transparent;
+  border: 1px solid #ddd;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.back-button:hover {
+  background: #f8f9fa;
+  border-color: #999;
+}
+
+.voice-agent-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.voice-agent-header h1 {
+  font-size: 2.5rem;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  font-size: 1.1rem;
+  color: #666;
+}
+
+/* Loading State */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #333;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+.button-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #333;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Wardrobe Summary */
+.wardrobe-summary {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  margin-bottom: 3rem;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+}
+
+.summary-item {
+  text-align: center;
+}
+
+.summary-item .count {
+  display: block;
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #333;
+}
+
+.summary-item .label {
+  display: block;
+  font-size: 1rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Start Conversation */
+.start-conversation {
+  text-align: center;
+  padding: 3rem;
+}
+
+.start-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #333;
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.start-button:hover:not(:disabled) {
+  background: #555;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.start-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.start-button svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Error Message */
+.error-message {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  color: #c00;
+}
+
+/* Conversation Active */
+.conversation-active {
+  text-align: center;
+  padding: 2rem;
+}
+
+.voice-status {
+  margin-bottom: 2rem;
+  padding: 3rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+}
+
+.voice-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.voice-wave {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(45deg, #333, #666);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+}
+
+.status-text {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.speaking-indicator {
+  color: #28a745;
+  font-weight: bold;
+  animation: fade 1s ease-in-out infinite;
+}
+
+@keyframes fade {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.stop-button {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.stop-button:hover {
+  background: #c82333;
+}
+
+/* Displayed Items */
+.displayed-items {
+  margin-top: 3rem;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+}
+
+.displayed-items h3 {
+  text-align: center;
+  margin-bottom: 2rem;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* Clothing Card */
+.voice-clothing-card {
+  position: relative;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.voice-clothing-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+}
+
+.voice-clothing-card.shopping-item {
+  cursor: pointer;
+  border: 2px solid #28a745;
+}
+
+.item-image {
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+}
+
+.item-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+  color: white;
+  padding: 1.5rem;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+}
+
+.voice-clothing-card:hover .item-overlay {
+  transform: translateY(0);
+}
+
+.item-description {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.item-brand {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  margin-bottom: 0.25rem;
+}
+
+.item-price {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+.click-to-shop {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  text-decoration: underline;
+}
+
+.item-type-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.voice-clothing-card.shirt .item-type-badge {
+  background: #3498db;
+}
+
+.voice-clothing-card.pants .item-type-badge {
+  background: #9b59b6;
+}
+
+.voice-clothing-card.shoes .item-type-badge {
+  background: #e74c3c;
+}
+
+.voice-clothing-card.shopping .item-type-badge {
+  background: #28a745;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .voice-agent-container {
+    padding: 1rem;
+  }
+
+  .voice-agent-header h1 {
+    font-size: 2rem;
+  }
+
+  .wardrobe-summary {
+    gap: 1.5rem;
+    padding: 1.5rem;
+  }
+
+  .summary-item .count {
+    font-size: 2rem;
+  }
+
+  .items-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .item-image {
+    height: 250px;
+  }
+}

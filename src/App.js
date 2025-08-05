@@ -5,7 +5,7 @@ import Navigation from './components/Navigation';
 import LuxuryClosetHome from './components/LuxuryClosetHome';
 import Login from './Login';
 import Wardrobe from './Wardrobe';
-import Closet from './Closet';
+// import Closet from './Closet'; // Disabled - not using
 import VirtualCloset from './VirtualCloset';
 import OpenAISwitch from './OpenAISwitch';
 import StyleAssistant from './StyleAssistant';
@@ -16,16 +16,12 @@ import { preloadUserData } from './dataPreloader';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', 'virtualcloset', 'openai', 'styleassistant', or 'moodboard'
+  const [currentView, setCurrentView] = useState('main'); // 'main', 'wardrobe', 'closet', 'virtualcloset', 'openai', 'styleassistant', 'moodboard', or 'voiceagent'
 
   // Handle user login
   const handleLogin = (user) => {
     setCurrentUser(user);
-    
-    // Start preloading data if we have the real uid
-    if (user.uid && !user.isAuthenticating) {
-      preloadUserData(user.uid);
-    }
+    // Don't preload here - onAuthStateChanged will handle it
   };
 
   // Handle logout
@@ -74,8 +70,9 @@ function App() {
     switch (currentView) {
       case 'wardrobe':
         return <Wardrobe user={currentUser} onBack={() => setCurrentView('main')} />;
-      case 'closet':
-        return <Closet user={currentUser} onBack={() => setCurrentView('main')} />;
+      // Disabled - not using this view
+      // case 'closet':
+      //   return <Closet user={currentUser} onBack={() => setCurrentView('main')} />;
       case 'virtualcloset':
         return <VirtualCloset user={currentUser} onBack={() => setCurrentView('main')} />;
       case 'openai':

@@ -16,6 +16,9 @@ from datetime import datetime
 # Load environment variables from .env file in parent directory
 load_dotenv('../.env')
 
+# Import secret manager for API keys
+from services.secret_manager import get_secret
+
 # Import Google GenerativeAI
 try:
     import google.generativeai as genai
@@ -45,12 +48,17 @@ from services.openai_tryon_service import OpenAITryOnService
 from services.langchain_agent_fixed import (
     handle_agent_chat, 
     clear_agent_session,
+    get_fashion_trends as get_fashion_trends_internal,
+    get_shopping_recommendations as get_shopping_recommendations_internal,
     get_or_create_agent
 )
 
 # Import Firebase service for centralized Firebase operations
 from services.firebase_service import FirebaseService, bucket
 from google.cloud import firestore
+
+# Import ElevenLabs endpoints
+from services.elevenlabs_endpoints import register_elevenlabs_routes
 from services.fashion_trends_service import FashionTrendsService
 from services.moodboard import TrendsService
 
@@ -116,6 +124,9 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Initialize Gemini service
 gemini_service = GeminiService()
 
+# Register ElevenLabs webhook endpoints
+register_elevenlabs_routes(app)
+
 
 @app.route('/')
 def home():
@@ -129,7 +140,13 @@ def health():
     return jsonify({
         "status": "healthy",
         "model_info": MODEL_INFO,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "secrets_status": {
+            "SERPER_API_KEY": bool(get_secret('SERPER_API_KEY')),
+            "GEMINI_API_KEY": bool(get_secret('GEMINI_API_KEY')),
+            "QLOO_API_KEY": bool(get_secret('QLOO_API_KEY')),
+            "OPENAI_API_KEY": bool(get_secret('OPENAI_API_KEY'))
+        }
     })
 
 @app.route('/static/<filename>')
@@ -1105,8 +1122,46 @@ def save_virtual_closet_item():
         if not user_id or not item:
             return jsonify({'error': 'Missing userId or item data'}), 400
         
-        # Store in Firebase Storage as JSON
         item_id = item.get('id', str(int(datetime.now().timestamp() * 1000)))
+        
+        # Process result image - upload to storage if base64
+        if 'resultImage' in item and item['resultImage'].startswith('data:'):
+            try:
+                # Extract base64 data
+                header, base64_data = item['resultImage'].split(',', 1)
+                image_data = base64.b64decode(base64_data)
+                
+                # Upload to Firebase Storage
+                result_blob_path = f"users/{user_id}/virtual-closet-results/{item_id}.png"
+                result_blob = bucket.blob(result_blob_path)
+                result_blob.upload_from_string(image_data, content_type='image/png')
+                result_blob.make_public()
+                
+                # Store URL instead of base64
+                item['resultImage'] = result_blob.public_url
+            except Exception as e:
+                print(f"Error uploading result image: {str(e)}")
+                return jsonify({'error': f'Failed to upload result image: {str(e)}'}), 500
+        
+        # Clean up original image - should be URL or reference only
+        if 'originalImage' in item and item['originalImage'].startswith('data:'):
+            # Don't store base64 original images
+            item['originalImage'] = 'ERROR: Should be URL not base64'
+        
+        # Clean up garments - should be references only
+        if 'garments' in item:
+            cleaned_garments = {}
+            for garment_type, garment_data in item['garments'].items():
+                if garment_data:
+                    if garment_data.startswith('data:'):
+                        # Don't store base64 garment images
+                        cleaned_garments[garment_type] = 'ERROR: Should be reference not base64'
+                    else:
+                        # Keep references/filenames/URLs as is
+                        cleaned_garments[garment_type] = garment_data
+            item['garments'] = cleaned_garments
+        
+        # Store metadata in Firebase Storage as JSON
         blob_path = f"users/{user_id}/virtual-closet/{item_id}.json"
         blob = bucket.blob(blob_path)
         
@@ -1127,31 +1182,67 @@ def save_virtual_closet_item():
 def get_virtual_closet_items(user_id):
     """Get all virtual closet items for a user"""
     try:
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 20, type=int)  # Default 20 items per page
+        limit = min(limit, 50)  # Max 50 items per page
+        
         prefix = f"users/{user_id}/virtual-closet/"
         blobs = bucket.list_blobs(prefix=prefix)
         
         items = []
+        total_size = 0
+        
         for blob in blobs:
             # Skip directories
             if blob.name.endswith('/'):
                 continue
             
-            # Download and parse JSON
-            json_data = blob.download_as_text()
-            item = json.loads(json_data)
-            
-            # Ensure ID is set
-            if 'id' not in item:
-                item['id'] = os.path.basename(blob.name).replace('.json', '')
-            
-            items.append(item)
+            try:
+                # Download and parse JSON
+                json_data = blob.download_as_text()
+                item = json.loads(json_data)
+                
+                # Ensure ID is set
+                if 'id' not in item:
+                    item['id'] = os.path.basename(blob.name).replace('.json', '')
+                
+                # Estimate item size
+                item_size = len(json_data)
+                total_size += item_size
+                
+                # Log if item has base64 data (shouldn't happen with new saves)
+                if 'resultImage' in item and item['resultImage'].startswith('data:'):
+                    print(f"WARNING: Item {item['id']} has base64 resultImage ({item_size / 1024:.1f}KB)")
+                if 'originalImage' in item and item['originalImage'].startswith('data:'):
+                    print(f"WARNING: Item {item['id']} has base64 originalImage")
+                if 'garments' in item:
+                    for g_type, g_data in item['garments'].items():
+                        if g_data and g_data.startswith('data:'):
+                            print(f"WARNING: Item {item['id']} has base64 garment {g_type}")
+                
+                items.append(item)
+            except Exception as e:
+                print(f"Error processing item {blob.name}: {str(e)}")
+                continue
         
         # Sort by createdAt (newest first)
         items.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
         
+        # Apply pagination
+        start = (page - 1) * limit
+        end = start + limit
+        paginated_items = items[start:end]
+        
+        print(f"Virtual closet: {len(items)} total items, {total_size / 1024 / 1024:.1f}MB total, returning page {page} ({len(paginated_items)} items)")
+        
         return jsonify({
             'success': True,
-            'items': items
+            'items': paginated_items,
+            'total': len(items),
+            'page': page,
+            'limit': limit,
+            'totalPages': (len(items) + limit - 1) // limit
         })
         
     except Exception as e:
@@ -1478,8 +1569,8 @@ def get_fashion_trends(location):
 def get_shopping_recommendations():
     """Get shopping recommendations based on location and needs"""
     print("\n[shopping-recommendations] Processing request")
-    print(f"[shopping-recommendations] SERPER_API_KEY exists: {bool(os.getenv('SERPER_API_KEY'))}")
-    print(f"[shopping-recommendations] SERPER_API_KEY length: {len(os.getenv('SERPER_API_KEY', ''))}")
+    print(f"[shopping-recommendations] SERPER_API_KEY exists: {bool(get_secret('SERPER_API_KEY'))}")
+    print(f"[shopping-recommendations] SERPER_API_KEY length: {len(get_secret('SERPER_API_KEY') or '')}")
     
     try:
         data = request.json
@@ -1525,7 +1616,7 @@ def get_tribe_picks():
         print(f"[Flask] Getting tribe picks for music: {music}, movies: {movies}, location: {location}")
         
         # Check if we have Qloo API key
-        qloo_api_key = os.getenv('QLOO_API_KEY', '')
+        qloo_api_key = get_secret('QLOO_API_KEY') or ''
         if not qloo_api_key:
             print("[Flask] No QLOO API key configured")
             return jsonify({
@@ -1638,7 +1729,7 @@ def search_products():
         query = data.get('query', '')
         num_results = data.get('num_results', 3)
         
-        serper_api_key = os.getenv('SERPER_API_KEY')
+        serper_api_key = get_secret('SERPER_API_KEY')
         if not serper_api_key:
             return jsonify({
                 'success': False,

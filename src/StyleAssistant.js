@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import './globalStyles.css';
 import './StyleAssistant.css';
 import { getUserClothingItems } from './closetService';
+import API_URL from './config';
+import VoiceAgentPopup from './VoiceAgentPopup';
 
 function StyleAssistant({ user }) {
   const [messages, setMessages] = useState([]);
@@ -9,6 +11,7 @@ function StyleAssistant({ user }) {
   const [loading, setLoading] = useState(false);
   const [clothingItems, setClothingItems] = useState({});
   const [wardrobeLoading, setWardrobeLoading] = useState(true);
+  const [showVoiceAgent, setShowVoiceAgent] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -131,7 +134,7 @@ function StyleAssistant({ user }) {
 
     try {
       // Use the new platform-agnostic agent through Flask
-      const response = await fetch('http://localhost:5001/agent/chat', {
+      const response = await fetch(`${API_URL}/agent/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,7 +188,7 @@ function StyleAssistant({ user }) {
       /*
       try {
         console.log('Falling back to old style assistant...');
-        const fallbackResponse = await fetch('http://localhost:5001/style-assistant/chat', {
+        const fallbackResponse = await fetch(`${API_URL}/style-assistant/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -288,7 +291,7 @@ function StyleAssistant({ user }) {
       // Clear backend session if exists
       if (sessionId) {
         try {
-          const response = await fetch(`http://localhost:5001/agent/clear-session/${sessionId}`, {
+          const response = await fetch(`${API_URL}/agent/clear-session/${sessionId}`, {
             method: 'POST'
           });
           const data = await response.json();
@@ -411,10 +414,29 @@ function StyleAssistant({ user }) {
                 <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
+            <button
+              onClick={() => setShowVoiceAgent(true)}
+              className="voice-button-enhanced"
+              title="Use voice assistant"
+              disabled={wardrobeLoading}
+            >
+              <div className="voice-sphere">
+                <div className="voice-sphere-inner"></div>
+              </div>
+              <span className="voice-label">Try Voice!</span>
+            </button>
           </div>
         </div>
       </div>
       </div>
+      
+      {showVoiceAgent && (
+        <VoiceAgentPopup 
+          user={user}
+          wardrobeData={clothingItems}
+          onClose={() => setShowVoiceAgent(false)}
+        />
+      )}
     </div>
   );
 }
